@@ -27,6 +27,28 @@ class MainActivity : FlutterActivity() {
 
     private val channelName = "com.makay.filemanager/platform"
 
+    /// Medya izni istek kodu.
+    private val REQ_MEDIA = 4201
+
+    /// Android 11+ "tüm dosyalara erişim" verildi mi?
+    private fun hasAllFilesAccess(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+    /// Granüler medya (Android 13+) veya READ_EXTERNAL_STORAGE (eski) verildi mi?
+    private fun hasMediaPermissions(): Boolean {
+        val granted = { p: String ->
+            androidx.core.content.ContextCompat.checkSelfPermission(this, p) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        return if (Build.VERSION.SDK_INT >= 33) {
+            granted(android.Manifest.permission.READ_MEDIA_IMAGES) &&
+                granted(android.Manifest.permission.READ_MEDIA_VIDEO) &&
+                granted(android.Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            granted(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
@@ -75,6 +97,57 @@ class MainActivity : FlutterActivity() {
                             } catch (e2: Exception) {
                                 result.error("settings_error", e2.message, null)
                             }
+                        }
+                    }
+
+                    "checkPermissions" -> {
+                        // İlk açılış izin onayı (A18): durumu bildir.
+                        try {
+                            result.success(
+                                mapOf(
+                                    "allFiles" to hasAllFilesAccess(),
+                                    "media" to hasMediaPermissions()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            result.error("perm_error", e.message, null)
+                        }
+                    }
+
+                    "requestAllFilesAccess" -> {
+                        // "Tüm dosyalara erişim" yalnızca sistem ayar ekranından
+                        // verilebilir; kullanıcıyı o ekrana yönlendiriyoruz.
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            startActivity(
+                                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            )
+                        }
+                        result.success(hasAllFilesAccess())
+                    }
+
+                    "requestMediaPermissions" -> {
+                        // Android 13+ granüler medya, alt sürümlerde READ_EXTERNAL_STORAGE.
+                        try {
+                            val perms = if (Build.VERSION.SDK_INT >= 33) {
+                                arrayOf(
+                                    android.Manifest.permission.READ_MEDIA_IMAGES,
+                                    android.Manifest.permission.READ_MEDIA_VIDEO,
+                                    android.Manifest.permission.READ_MEDIA_AUDIO
+                                )
+                            } else {
+                                arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                            requestPermissions(perms, REQ_MEDIA)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("perm_error", e.message, null)
                         }
                     }
 

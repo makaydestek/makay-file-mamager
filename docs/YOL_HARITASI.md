@@ -240,8 +240,19 @@
 - [x] **Güncelleme kontrolü** iki adımlı: sürüm seçimi yapılmadan
       güncelleme sormaz, seçim yapıldıktan hemen sonra sorgular
 - [x] Ayarlar → **"Sürüm seçimini göster"**: seçim ekranı yeniden açılır
-- [x] 3 yeni widget testi (seçim ekranı + mod uygulama); analiz temiz,
-      testler 33/33
+- [x] **İzin onay ekranı** (`PermissionsScreen`): sürüm seçiminden sonra
+      "Tüm dosyalara erişim" (Android ayar ekranı) ve "Medya erişimi"
+      (çalışma zamanı diyaloğu) istenir; sistem ayar ekranından dönüldüğünde
+      durum otomatik tazelenir, en az bir izin verilmeden "Devam et" açılmaz
+      → kullanıcı onay vermeden uygulama açılmaz
+- [x] Kotlin kanalı: `checkPermissions`, `requestAllFilesAccess`,
+      `requestMediaPermissions` + `PermissionService` (Dart)
+- [x] Ayarlar → **"İzinler"**: durum görüntülenir / yeniden istenir
+- [x] **Ana ekran kart taşması** düzeltildi: "Depolama alanı" ve
+      "Yeni Dosyalar" etiketleri kart dışına taşıyordu → ikon/küçük kart,
+      `FittedBox(scaleDown)` ve oran 0.88 ile taşma imkânsız; 360×640
+      regresyon testi eklendi
+- [x] 7 yeni widget testi; analiz temiz, testler 37/37
 
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`

@@ -18,6 +18,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kStorageWarnPercent = 'storage_warn_percent';
   static const _kTvMode = 'tv_mode';
   static const _kDeviceModeChosen = 'device_mode_chosen';
+  static const _kPermissionsOnboarded = 'permissions_onboarded';
 
   static Future<SettingsProvider> load() async =>
       SettingsProvider(await SharedPreferences.getInstance());
@@ -120,5 +121,13 @@ class SettingsProvider extends ChangeNotifier {
       themeMode = ThemeMode.dark;
     }
     deviceModeChosen = true;
+  }
+
+  /// İlk açılıştaki izin onayı tamamlandı mı?
+  bool get permissionsOnboarded => _prefs.getBool(_kPermissionsOnboarded) ?? false;
+
+  set permissionsOnboarded(bool value) {
+    _prefs.setBool(_kPermissionsOnboarded, value);
+    notifyListeners();
   }
 }

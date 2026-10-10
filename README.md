@@ -23,6 +23,7 @@ tüm özellikler her kullanıcıya açıktır:
 | FTP / Ağ erişimi | Ağdan erişim (FTP sunucu) ve uzak konumlar |
 | Bulut bağlantıları | Dropbox, Drive, OneDrive, Box, Nextcloud, pCloud, Yandex |
 | İlk açılış seçimi | Mobil-Tablet veya TV sürümünü seç; ayarlar otomatik uygulanır |
+| İzin onayı | Dosya/medya izinleri kullanıcıdan istenir; onaysız açılmaz |
 
 ## Ekranlar (referans ekranlardan)
 

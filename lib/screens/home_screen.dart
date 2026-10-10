@@ -49,7 +49,7 @@ class HomeScreen extends StatelessWidget {
               crossAxisCount: columns,
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
-              childAspectRatio: 0.95,
+              childAspectRatio: 0.88,
             ),
             itemCount: kHomeCategories.length,
             itemBuilder: (context, index) =>
@@ -79,39 +79,49 @@ class _CategoryTile extends StatelessWidget {
           }
         },
         child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: category.color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+          padding: const EdgeInsets.all(6),
+          // Kart içeriği taşmasın: sığmazsa hafifçe küçülür.
+          child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: category.color.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(category.icon, size: 28, color: category.color),
                 ),
-                child: Icon(category.icon, size: 34, color: category.color),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                category.title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-              ),
-              if (category.id == 'internal') ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: 8),
                 Text(
-                  'Depolama alanı',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                  category.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        height: 1.15,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                 ),
+                if (category.id == 'internal') ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Depolama alanı',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          height: 1.1,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

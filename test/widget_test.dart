@@ -31,4 +31,32 @@ void main() {
     expect(find.text('Videolar'), findsOneWidget);
     expect(find.text('Ağdan erişim'), findsOneWidget);
   });
+
+  testWidgets('Dar ekranda kategori kartlarında taşma olmaz', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsProvider.load();
+
+    // Küçük telefon ekranı (360x640) — taşmanın görüldüğü boyut.
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: settings,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: const HomeScreen(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // RenderFlex taşması exception olarak yansır.
+    expect(tester.takeException(), isNull);
+    expect(find.text('Yeni Dosyalar'), findsOneWidget);
+  });
 }

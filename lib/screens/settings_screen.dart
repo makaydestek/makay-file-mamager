@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/settings_provider.dart';
+import '../screens/permissions_screen.dart';
 import '../services/platform_service.dart';
 import '../services/update_service.dart';
 import '../utils/formats.dart';
@@ -39,6 +40,14 @@ class SettingsScreen extends StatelessWidget {
             }),
             leading: const Icon(Icons.tv_rounded),
             onTap: () => _pickUiMode(context, settings),
+          ),
+          ListTile(
+            title: const Text('İzinler'),
+            subtitle: const Text('Dosya ve medya izinlerini yönet'),
+            leading: const Icon(Icons.shield_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PermissionsScreen()),
+            ),
           ),
           ListTile(
             title: const Text('Sürüm seçimini göster'),
