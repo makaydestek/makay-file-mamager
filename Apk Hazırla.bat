@@ -55,11 +55,11 @@ if not exist "%OUT%" (
   exit /b 1
 )
 
-rem Not: COPY komutu basarili olsa bile ERRORLEVEL 1 dondurebildigi icin
-rem hata kontrolu dosya varligi ile yapilir.
+rem Not: if blogu icinde echo satirlarinda parantez KULLANILMAZ; cmd
+rem parantezli blogu parse edemeden betigi o satirda keser.
 copy /y "%OUT%" "APK\MakayFileManager-%VER%.apk" >nul
 if not exist "APK\MakayFileManager-%VER%.apk" (
-  echo [HATA] APK kopyalanamadi (APK klasorune yazma izni yok?)
+  echo [HATA] APK kopyalanamadi - APK klasorune yazma izni yok?
   pause
   exit /b 1
 )
@@ -131,7 +131,7 @@ if errorlevel 1 (
 )
 gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256"
 if errorlevel 1 (
-  echo [HATA] Release varliklari (APK + sha256) yuklenemedi.
+  echo [HATA] Release varliklari - APK veya sha256 yuklenemedi.
   pause
   exit /b 1
 )
@@ -142,7 +142,7 @@ set /p ASSETS=<"%TEMP%\mf_assets.txt"
 if "%ASSETS%"=="" goto assetsok
 if %ASSETS% LSS 2 (
   echo.
-  echo [HATA] Release %VER% olusturuldu ama dosyalar yuklenmedi (asset: %ASSETS%).
+  echo [HATA] Release %VER% olusturuldu ama dosyalar yuklenmedi - asset sayisi: %ASSETS%
   echo        Elle yuklemek icin:  gh release upload %VER% "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber
   pause
   exit /b 1
