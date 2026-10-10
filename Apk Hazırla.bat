@@ -27,8 +27,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Write-Output $name" > "%TEMP%\mf_ver.txt"
 set /p VER=<"%TEMP%\mf_ver.txt"
 
-echo APK derleniyor (uc mimari ayri - split-per-abi, birkac dakika surebilir)...
-call flutter build apk --release --split-per-abi
+echo APK derleniyor (tek yapilandirma, birkac dakika surebilir)...
+call flutter build apk --release
 if errorlevel 1 (
   echo.
   echo APK derlemesi BASARISIZ oldu! Hatalari kontrol edin.
@@ -36,31 +36,40 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set SPLIT=build\app\outputs\flutter-apk
-if not exist "%SPLIT%\app-arm64-v8a-release.apk" (
-  echo Cikti APK bulunamadi: %SPLIT%
+set OUT=build\app\outputs\flutter-apk\app-release.apk
+if not exist "%OUT%" (
+  echo Cikti APK bulunamadi: %OUT%
   pause
   exit /b 1
 )
 
-del /q "APK\latest.apk" >nul 2>&1
-for %%A in (arm64-v8a armeabi-v7a x86_64) do (
-  if exist "%SPLIT%\app-%%A-release.apk" (
-    copy /y "%SPLIT%\app-%%A-release.apk" "APK\MakayFileManager-%VER%-%%A.apk" >nul
-    copy /y "%SPLIT%\app-%%A-release.apk" "APK\latest-%%A.apk" >nul
-  )
-)
+copy /y "%OUT%" "APK\MakayFileManager-%VER%.apk" >nul
 
-echo SHA256 ozetleri ve guncelleme JSON'u hazirlaniyor...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tool\make_release_json.ps1"
+echo SHA256 ozeti hazirlaniyor...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$apk = Join-Path '%~dp0' 'APK\MakayFileManager-%VER%.apk';" ^
+  "$h = (Get-FileHash $apk -Algorithm SHA256).Hash.ToLower();" ^
+  "[IO.File]::WriteAllText(($apk + '.sha256'), ($h + '  ' + (Split-Path $apk -Leaf) + [Environment]::NewLine));" ^
+  "Write-Output ('SHA256: ' + $h)"
 if errorlevel 1 (
-  echo SHA256/JSON hazirlanamadi!
+  echo SHA256 ozeti hazirlanamadi!
   pause
   exit /b 1
 )
+
+echo GitHub Release yayinlaniyor...
+gh release view "%VER%" >nul 2>&1
+if errorlevel 1 goto :createrelease
+gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber >nul 2>&1
+if errorlevel 1 echo [Uyari] Release guncellenemedi - "gh auth status" kontrol edin.
+goto :releaseend
+:createrelease
+gh release create "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --title "MakayFileManager v%VER%" --notes "Yayin: MakayFileManager v%VER% - APK ve SHA256 ozeti eklenmistir." >nul 2>&1
+if errorlevel 1 echo [Uyari] GitHub Release olusturulamadi - "gh auth status" kontrol edin.
+:releaseend
 
 echo Depoya yayinlaniyor (git)...
-git add -A "APK" "version.properties" "pubspec.yaml" >nul 2>&1
+git add "version.properties" "pubspec.yaml" >nul 2>&1
 git diff --cached --quiet >nul 2>&1
 if not errorlevel 1 goto :nopublish
 git commit -m "Yayin: MakayFileManager v%VER%" >nul 2>&1
@@ -70,5 +79,6 @@ if errorlevel 1 echo [Uyari] Depoya itilemedi - manuel "git push" yapin.
 
 start "" "%~dp0APK"
 echo.
-echo APK hazir: APK\MakayFileManager-%VER%-arm64-v8a.apk (+ arm32, x86_64)
+echo APK hazir: APK\MakayFileManager-%VER%.apk
+echo GitHub Release %VER% yayinda - uygulama acilista guncelleme isteyecektir.
 pause

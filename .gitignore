@@ -44,9 +44,9 @@ android/key.properties
 *.jks
 *.keystore
 
-# Sürüm APK'ları commit edilmez; yalnızca güncelleme üçlüsü yayılır:
-#   APK/latest.apk + APK/latest.apk.sha256 + APK/latest.json
-APK/MakayFileManager-*.apk
+# APK'lar git'e COMMIT EDİLMEZ — yalnızca GitHub Release'lerde yaşar.
+# Yerel çıktı klasörü: APK/ (derlemeler buraya kopyalanır, otomatik Release).
+APK/
 
 # Android Studio will place build artifacts here
 /android/app/debug

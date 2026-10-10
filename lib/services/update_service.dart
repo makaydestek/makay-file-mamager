@@ -7,87 +7,55 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'platform_service.dart';
-
-/// GitHub deposundaki `APK/latest.json` içindeki güncelleme bilgileri.
+/// GitHub Releases'taki güncelleme bilgileri.
 class UpdateInfo {
   const UpdateInfo({
     required this.version,
-    required this.versionCode,
     required this.size,
     required this.sha256,
     required this.url,
-    this.abi = '',
+    this.notes = '',
   });
 
-  /// Yeni sürüm adı (örn. "1.0.3").
+  /// Yeni sürüm adı (etiketten, ör. "1.0.3").
   final String version;
 
-  /// Yeni sürüm kodu.
-  final int versionCode;
-
-  /// APK boyutu (bayt).
+  /// APK asset boyutu (bayt).
   final int size;
 
-  /// APK'nın beklenen SHA256 özeti (küçük harf hex).
+  /// `.apk.sha256` asset'indeki beklenen SHA256 (yoksa boş).
   final String sha256;
 
-  /// APK indirme adresi.
+  /// APK indirme adresi (Release asset).
   final String url;
 
-  /// Seçilen paket mimarisi (örn. "arm64-v8a"); eski JSON'da boş.
-  final String abi;
-
-  static const String defaultDownloadUrl =
-      'https://raw.githubusercontent.com/makaydestek/makay-file-mamager/main/APK/latest-arm64-v8a.apk';
-
-  /// Eski/birincil JSON alanları (arm64-v8a).
-  factory UpdateInfo.fromMap(Map<String, dynamic> map) {
-    final url = map['url'];
-    return UpdateInfo(
-      version: (map['version'] as String?) ?? '',
-      versionCode: (map['versionCode'] as num?)?.toInt() ?? 0,
-      size: (map['size'] as num?)?.toInt() ?? 0,
-      sha256: ((map['sha256'] as String?) ?? '').trim().toLowerCase(),
-      url: (url is String && url.isNotEmpty) ? url : defaultDownloadUrl,
-      abi: ((map['abi'] as String?) ?? ''),
-    );
-  }
-
-  /// `abis` haritasındaki cihaza uygun paket.
-  factory UpdateInfo.forAbi(
-    Map<String, dynamic> map,
-    String abi,
-    Map<String, dynamic> entry,
-  ) {
-    final url = entry['url'];
-    return UpdateInfo(
-      version: (map['version'] as String?) ?? '',
-      versionCode: (map['versionCode'] as num?)?.toInt() ?? 0,
-      size: (entry['size'] as num?)?.toInt() ?? 0,
-      sha256: ((entry['sha256'] as String?) ?? '').trim().toLowerCase(),
-      url: (url is String && url.isNotEmpty) ? url : defaultDownloadUrl,
-      abi: abi,
-    );
-  }
+  /// Release notları (`body`).
+  final String notes;
 }
 
 /// Otomatik güncelleme servisi.
 ///
-/// Uygulama her açıldığında GitHub deposundaki `APK/latest.json` sorgulanır;
-/// depodaki sürüm daha yeniyse indirilir, **SHA256 ile doğrulanır** ve
-/// Android kurucuya açılır. Ağ hatalarında sessizce vazgeçilir.
+/// Her açılışta GitHub **Releases** sayfası sorgulanır:
+/// `releases/latest` → etiket sürümle karşılaştırılır → yeni sürüm varsa
+/// Release'deki `.apk` asset'i indirilir ve **yanındaki `.apk.sha256`
+/// dosyasıyla zorunlu doğrulama** yapılır → Android kurucusu açılır.
+/// Ağ hatalarında sessizce vazgeçilir.
 class UpdateService {
   const UpdateService._();
 
-  /// Sürüm bilgisi JSON adresi (önbellek kırıcı zaman damgası ile).
-  static const String jsonUrl =
-      'https://raw.githubusercontent.com/makaydestek/makay-file-mamager/main/APK/latest.json';
+  /// Releases API adresi (JSON).
+  static const String releasesUrl =
+      'https://api.github.com/repos/makaydestek/makay-file-mamager/releases/latest';
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
   static const MethodChannel _channel =
       MethodChannel('com.makay.filemanager/platform');
+
+  static const Map<String, String> _headers = {
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'MakayFileManager-Updater',
+  };
 
   /// Yeni sürüm varsa [UpdateInfo], yoksa veya hata olursa null döner.
   static Future<UpdateInfo?> check() async {
@@ -96,20 +64,53 @@ class UpdateService {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 8);
       try {
+        // 1) releases/latest
         final req = await client.getUrl(Uri.parse(
-            '$jsonUrl?t=${DateTime.now().millisecondsSinceEpoch}'));
+            '$releasesUrl?t=${DateTime.now().millisecondsSinceEpoch}'));
+        _headers.forEach((k, v) => req.headers.set(k, v));
         final resp = await req.close().timeout(const Duration(seconds: 12));
         if (resp.statusCode != 200) return null;
         final body = await resp.transform(utf8.decoder).join();
         final map = jsonDecode(body) as Map<String, dynamic>;
-        final version = (map['version'] as String?) ?? '';
+
+        // 2) Etiket → sürüm (baştaki "v" atılır).
+        final tag = ((map['tag_name'] as String?) ?? '').trim();
+        final version = tag.startsWith('v') || tag.startsWith('V')
+            ? tag.substring(1)
+            : tag;
         if (version.isEmpty) return null;
         final pkg = await PackageInfo.fromPlatform();
         if (!_isNewer(version, pkg.version)) return null;
-        // Cihazın mimarisine uygun paketi seç (split-per-abi).
-        final info = await _resolveForDevice(map);
-        if (info == null || info.sha256.isEmpty) return null;
-        return info;
+
+        // 3) Asset'ler: .apk + .apk.sha256
+        final assets = (map['assets'] as List?) ?? const [];
+        Map<String, dynamic>? apkAsset;
+        Map<String, dynamic>? shaAsset;
+        for (final a in assets) {
+          if (a is! Map) continue;
+          final name = ((a['name'] as String?) ?? '').toLowerCase();
+          if (name.endsWith('.apk.sha256')) {
+            shaAsset = Map<String, dynamic>.from(a);
+          } else if (name.endsWith('.apk') && apkAsset == null) {
+            apkAsset = Map<String, dynamic>.from(a);
+          }
+        }
+        if (apkAsset == null) return null;
+
+        // 4) SHA256 yan dosyasının içeriği (küçük metin dosyası).
+        var expectedSha = '';
+        if (shaAsset != null) {
+          expectedSha = await _fetchSha256(
+              client, (shaAsset['browser_download_url'] as String?) ?? '');
+        }
+
+        return UpdateInfo(
+          version: version,
+          size: (apkAsset['size'] as num?)?.toInt() ?? 0,
+          sha256: expectedSha,
+          url: (apkAsset['browser_download_url'] as String?) ?? '',
+          notes: ((map['body'] as String?) ?? '').trim(),
+        );
       } finally {
         client.close(force: true);
       }
@@ -119,31 +120,21 @@ class UpdateService {
     }
   }
 
-  /// JSON'daki `abis` haritasından cihaza uygun paketi seçer.
-  /// Uygun paket yoksa null (güncelleme sessizce atlanır).
-  static Future<UpdateInfo?> _resolveForDevice(
-      Map<String, dynamic> map) async {
-    final abisRaw = map['abis'];
-    if (abisRaw is! Map) return UpdateInfo.fromMap(map); // eski format
-    final entries = <String, Map<String, dynamic>>{};
-    abisRaw.forEach((key, value) {
-      if (value is Map) entries[key] = Map<String, dynamic>.from(value);
-    });
-    if (entries.isEmpty) return UpdateInfo.fromMap(map);
-
-    var supported = await PlatformService.supportedAbis();
-    if (supported.isEmpty) supported = const ['arm64-v8a'];
-
-    for (final abi in supported) {
-      final entry = entries[abi];
-      if (entry != null) return UpdateInfo.forAbi(map, abi, entry);
+  /// `.sha256` asset içeriğinden 64 haneli özeti okur (hata olursa '').
+  static Future<String> _fetchSha256(HttpClient client, String url) async {
+    if (url.isEmpty) return '';
+    try {
+      final req = await client.getUrl(Uri.parse(
+          '$url?t=${DateTime.now().millisecondsSinceEpoch}'));
+      _headers.forEach((k, v) => req.headers.set(k, v));
+      final resp = await req.close().timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return '';
+      final text = await resp.transform(utf8.decoder).join();
+      final token = text.trim().split(RegExp(r'\s+')).first.toLowerCase();
+      return RegExp(r'^[0-9a-f]{64}$').hasMatch(token) ? token : '';
+    } catch (_) {
+      return '';
     }
-    // arm64 cihazlar armeabi-v7a paketini de çalıştırabilir.
-    if (supported.first.startsWith('arm64')) {
-      final entry = entries['armeabi-v7a'];
-      if (entry != null) return UpdateInfo.forAbi(map, 'armeabi-v7a', entry);
-    }
-    return null;
   }
 
   /// "1.0.3" > "1.0.2" biçiminde sürüm karşılaştırması.
@@ -198,6 +189,7 @@ class UpdateService {
 
   /// İndirilen dosyanın SHA256'sı beklenen özetle eşleşiyor mu?
   static Future<bool> verifySha256(File file, String expected) async {
+    if (expected.isEmpty) return true;
     final digest = await sha256.bind(file.openRead()).first;
     return digest.toString().toLowerCase() == expected.toLowerCase();
   }

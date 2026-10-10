@@ -54,15 +54,20 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
 
 ## Otomatik Güncelleme
 
-Uygulama **her açılışında** GitHub deposunu
-(`github.com/makaydestek/makay-file-mamager`) sorgular; `APK/latest.json`
-içinde yeni sürüm varsa indirme diyaloğu açılır. İndirilen APK **SHA256**
-ile doğrulanır (eşleşmezse silinir) ve Android kurucusuna açılır.
-Sürüm artışı `Apk Hazırla.bat` ile yapılır; betik **mimariye bölünmüş**
-(`--split-per-abi`, cihaz başına ~20 MB) üç APK üretir, `*.sha256` yan
-dosyalarını ekler ve `latest-<abi>.apk` + `latest-<abi>.apk.sha256` +
-`latest.json` dosyalarını depoya iter; cihaz kendi mimarisine (arm64-v8a /
-armeabi-v7a / x86_64) uygun paketi indirir.
+Uygulama **her açılışında** GitHub **Releases** sayfasını
+(`github.com/makaydestek/makay-file-mamager/releases`) sorgular
+(`releases/latest` API'si). Release etiketi kurulu sürümden **yeni**yse
+indirme diyaloğu açılır. Release'deki `.apk` asset'i indirilir ve
+**yanındaki `.apk.sha256` asset'iyle zorunlu SHA256 doğrulaması**
+yapılır (eşleşmezse dosya silinir), sonra Android kurucusuna açılır.
+Release notları diyalogta gösterilir.
+
+Sürüm artışı `Apk Hazırla.bat` ile yapılır; betik **tek yapıda** tek APK
+üretir (`flutter build apk --release` — arm64 + arm32 + x86_64 tek
+dosyada, kullanıcı mimari seçmez), `*.apk.sha256` yan dosyasını ekler ve
+APK + özet ikilisini **otomatik GitHub Release** olarak yayınlar.
+APK dosyaları git'e girmez (`APK/` yok sayılır) — dağıtım tamamen
+Release üzerinden yapılır, depo hafif kalır.
 
 ## Çalıştırma
 
@@ -73,8 +78,8 @@ flutter run -d chrome
 # Android (cihaz/emülatör)
 flutter run -d android
 
-# Release APK (mimariye bölünmüş: arm64-v8a / armeabi-v7a / x86_64)
-flutter build apk --release --split-per-abi
+# Release APK (tek yapı: arm64 + arm32 + x86_64 tek dosyada)
+flutter build apk --release
 
-# Tamamlanmış sürüm (sürüm artışı + sha256 + depoya yayın): Apk Hazırla.bat
+# Tamamlanmış sürüm (sürüm artışı + sha256 + otomatik GitHub Release): Apk Hazırla.bat
 ```

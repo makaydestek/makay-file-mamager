@@ -194,19 +194,32 @@
 - [x] `package_info_plus` eklendi; analiz temiz, testler 30/30
 
 ### A16 — APK Boyut Optimizasyonu ✅
+> **Not (kullanıcı kararı)**: split-per-abi denemesi geri alındı —
+> kullanıcı mimariyi bilemeyeceği için **tek yapı** sürdürülecek.
+> Dağıtım güncellemesi A17'ye taşındı: tek APK + GitHub Releases.
 - [x] Ölçüm: 61 MB'ın %97'si `lib/` — **3 mimari tek APK'da** geliyordu
       (arm64 19,9 + arm32 17,9 + x86_64 21,4 MB)
 - [x] `flutter build apk --release --split-per-abi` → tek cihaz yalnızca
-      kendi mimarisini indirir (**~20 MB**, 3 kat küçülme)
-- [x] `tool/make_release_json.ps1`: mimari başına `*.sha256` yan dosyaları +
-      `abis` hariteli `latest.json` (birincil alanlar arm64 ile uyumlu)
-- [x] `UpdateService`: cihaz mimarisini Kotlin kanalından okur
-      (`getSupportedAbis` → `Build.SUPPORTED_ABIS`), `abis` haritasından
-      uygun paketi seçer (arm64 → arm32 yedeklemesi var); uygun paket
-      yoksa güncelleme sessizce atlanır
+      kendi mimarisini indirir (**~20 MB**, 3 kat küçülme) — *sonradan
+      kullanıcı kararıyla iptal edildi*
 - [x] Kullanılmayan `installed_apps` bağımlılığı kaldırıldı
-- [x] Betik: 3 APK → `APK\MakayFileManager-<sur>-<abi>.apk` +
-      `latest-<abi>.apk` + otomatik git yayını
+
+### A17 — GitHub Releases Tabanlı Güncelleme & Tek Yapı ✅
+- [x] **Tek APK yapısı** (kullanıcı kararı): `--split-per-abi` geri
+      alındı → `flutter build apk --release` tek fat APK (~61 MB);
+      kullanıcı mimari seçmez, tek yapı dağıtılmaya devam eder
+- [x] **UpdateService** → GitHub **Releases API**
+      (`releases/latest`): `tag_name` (baştaki `v` atılır) kurulu
+      sürümden yeniyse → Release'deki `.apk` asset'i indirilir,
+      **`.apk.sha256` asset'i okunup zorunlu SHA256 doğrulaması**
+      yapılır, Release notları (`body`) diyalogta gösterilir
+- [x] **Betik**: tek APK + `*.apk.sha256` yan dosyası üretir →
+      `gh release create` ile Release'ı **otomatik yayınlar**; APK'lar
+      git'e girmez (`APK/` gitignore) — depo hafif, dağıtım Release
+      üzerinden
+- [x] Eski `latest.json`/split dosyaları/`make_release_json.ps1`
+      temizlendi (sürüm ayrıştırma artık regex değil `jsonDecode`)
+- [x] `flutter analyze` temiz
 
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`

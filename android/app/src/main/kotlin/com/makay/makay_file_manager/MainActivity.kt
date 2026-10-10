@@ -63,15 +63,6 @@ class MainActivity : FlutterActivity() {
                         result.success(isTv)
                     }
 
-                    "getSupportedAbis" -> {
-                        // Otomatik guncelleme: cihazin birincil mimarisi (A16).
-                        try {
-                            result.success(Build.SUPPORTED_ABIS.toList())
-                        } catch (e: Exception) {
-                            result.error("abi_error", e.message, null)
-                        }
-                    }
-
                     "openDefaultAppsSettings" -> {
                         // Ayarlar → Varsayılan uygulamalar (A15).
                         try {

@@ -51,19 +51,22 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             _progress = total > 0 ? (received / total).clamp(0.0, 1.0) : 0);
       });
       if (!mounted) return;
-      setState(() => _phase = _Phase.verifying);
-      final ok = await UpdateService.verifySha256(file, widget.info.sha256);
-      if (!mounted) return;
-      if (!ok) {
-        try {
-          await file.delete();
-        } catch (_) {}
-        setState(() {
-          _phase = _Phase.error;
-          _error =
-              'SHA256 doğrulaması başarısız — dosya bozuk, indirme iptal edildi.';
-        });
-        return;
+      // Release'de .sha256 asset'i varsa doğrulama ZORUNLU.
+      if (widget.info.sha256.isNotEmpty) {
+        setState(() => _phase = _Phase.verifying);
+        final ok = await UpdateService.verifySha256(file, widget.info.sha256);
+        if (!mounted) return;
+        if (!ok) {
+          try {
+            await file.delete();
+          } catch (_) {}
+          setState(() {
+            _phase = _Phase.error;
+            _error =
+                'SHA256 doğrulaması başarısız — dosya bozuk, indirme iptal edildi.';
+          });
+          return;
+        }
       }
       await UpdateService.install(file);
       if (!mounted) return;
@@ -112,10 +115,27 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             if (widget.info.size > 0) ...[
               const SizedBox(height: 4),
               Text(
-                'İndirme boyutu: ${Formats.size(widget.info.size)}'
-                '${widget.info.abi.isEmpty ? '' : ' (${widget.info.abi})'} • '
-                'SHA256 ile doğrulanacak',
+                'İndirme boyutu: ${Formats.size(widget.info.size)} • '
+                '${widget.info.sha256.isEmpty ? 'SHA256 özeti yayında yok' : 'SHA256 ile doğrulanacak'}',
                 style: theme.textTheme.bodySmall,
+              ),
+            ],
+            if (widget.info.notes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: .5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  widget.info.notes,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
             ],
             const SizedBox(height: 12),
