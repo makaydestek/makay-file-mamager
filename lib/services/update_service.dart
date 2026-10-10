@@ -155,7 +155,11 @@ class UpdateService {
     UpdateInfo info,
     void Function(int received, int total) onProgress,
   ) async {
-    final dir = await getApplicationDocumentsDirectory();
+    // Not: APK, FileProvider'ın tanıdığı `files/` dizinine yazılır
+    // (res/xml/file_paths.xml → <files-path>). `app_flutter` dizini
+    // kapsam dışı olduğu için oraya yazılınca kurulum "Failed to find
+    // configured root" hatası veriyordu.
+    final dir = await getApplicationSupportDirectory();
     final out = File('${dir.path}/makay-update.apk');
     if (await out.exists()) {
       await out.delete();

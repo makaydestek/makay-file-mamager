@@ -227,6 +227,12 @@
       güncel sürüm kalır
 - [x] Eski `latest.json`/split dosyaları/`make_release_json.ps1`
       temizlendi (sürüm ayrıştırma artık regex değil `jsonDecode`)
+- [x] **Kurulum hatası düzeltmesi**: indirilen APK `app_flutter`
+      dizinine yazılıyordu, FileProvider bu kökü tanımlamıyordu
+      ("Failed to find configured root") → indirme artık
+      `getApplicationSupportDirectory()` (`files/`, `<files-path>` kapsamı)
+      dizinine yapılır; kurulum hataları ham `PlatformException` yerine
+      okunabilir mesajla gösterilir
 - [x] `flutter analyze` temiz
 
 ### A18 — İlk Açılış Sürüm Seçimi (Mobil-Tablet / TV) ✅

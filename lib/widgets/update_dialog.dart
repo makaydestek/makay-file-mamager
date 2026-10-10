@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/update_service.dart';
@@ -71,6 +72,16 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       await UpdateService.install(file);
       if (!mounted) return;
       setState(() => _phase = _Phase.ready);
+    } on PlatformException catch (e) {
+      // Kurucu açılamadı (kanal/izin hatası) — indirme başarılıydı.
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.error;
+        _error = e.code == 'install_error'
+            ? 'Kurulum ekranı açılamadı. Ayarlar → Uygulamalar üzerinden '
+                'güncelleme yapabilir ya da tekrar deneyebilirsin.'
+            : 'Kurulum başlatılamadı: ${e.message ?? e.code}';
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
