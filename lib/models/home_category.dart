@@ -1,0 +1,108 @@
+import 'package:flutter/material.dart';
+
+/// Ana ekrandaki kategori karolarının veri modeli.
+class HomeCategory {
+  const HomeCategory({
+    required this.id,
+    required this.title,
+    required this.icon,
+    required this.color,
+    this.route,
+  });
+
+  final String id;
+  final String title;
+  final IconData icon;
+  final Color color;
+
+  /// İlgili ekran rotası; null ise "yakında" ekranı gösterilir.
+  final String? route;
+}
+
+/// Referans uygulamanın ana ekran ızgarasındaki 12 kategori.
+const List<HomeCategory> kHomeCategories = [
+  HomeCategory(
+    id: 'internal',
+    title: 'Ana bellek',
+    icon: Icons.storage_rounded,
+    color: Color(0xFF9E9E9E),
+    route: '/browse/internal',
+  ),
+  HomeCategory(
+    id: 'downloads',
+    title: 'İndirilenler',
+    icon: Icons.folder_zip_rounded,
+    color: Color(0xFFF9A825),
+    route: '/browse/downloads',
+  ),
+  HomeCategory(
+    id: 'analysis',
+    title: 'Bellek Analizi',
+    icon: Icons.donut_small_rounded,
+    color: Color(0xFF616161),
+    route: '/analysis',
+  ),
+  HomeCategory(
+    id: 'images',
+    title: 'Görüntüler',
+    icon: Icons.image_rounded,
+    color: Color(0xFF8E24AA),
+    route: '/browse/images',
+  ),
+  HomeCategory(
+    id: 'audio',
+    title: 'Ses',
+    icon: Icons.music_note_rounded,
+    color: Color(0xFF00897B),
+    route: '/browse/audio',
+  ),
+  HomeCategory(
+    id: 'videos',
+    title: 'Videolar',
+    icon: Icons.video_library_rounded,
+    color: Color(0xFFD32F2F),
+    route: '/browse/videos',
+  ),
+  HomeCategory(
+    id: 'documents',
+    title: 'Belgeler',
+    icon: Icons.description_rounded,
+    color: Color(0xFF1976D2),
+    route: '/browse/documents',
+  ),
+  HomeCategory(
+    id: 'apps',
+    title: 'Uygulamalar',
+    icon: Icons.android_rounded,
+    color: Color(0xFF43A047),
+    route: '/apps',
+  ),
+  HomeCategory(
+    id: 'recent',
+    title: 'Yeni Dosyalar',
+    icon: Icons.schedule_rounded,
+    color: Color(0xFF546E7A),
+    route: '/browse/recent',
+  ),
+  HomeCategory(
+    id: 'cloud',
+    title: 'Bulut',
+    icon: Icons.cloud_rounded,
+    color: Color(0xFF1E88E5),
+    route: '/cloud',
+  ),
+  HomeCategory(
+    id: 'remote',
+    title: 'Uzak',
+    icon: Icons.desktop_windows_rounded,
+    color: Color(0xFF6D4C41),
+    route: '/remote',
+  ),
+  HomeCategory(
+    id: 'network',
+    title: 'Ağdan erişim',
+    icon: Icons.devices_rounded,
+    color: Color(0xFF00695C),
+    route: '/network',
+  ),
+];
