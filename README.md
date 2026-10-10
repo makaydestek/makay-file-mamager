@@ -22,6 +22,7 @@ tüm özellikler her kullanıcıya açıktır:
 | Bellek analizi | Kategori bazlı depolama analizi |
 | FTP / Ağ erişimi | Ağdan erişim (FTP sunucu) ve uzak konumlar |
 | Bulut bağlantıları | Dropbox, Drive, OneDrive, Box, Nextcloud, pCloud, Yandex |
+| İlk açılış seçimi | Mobil-Tablet veya TV sürümünü seç; ayarlar otomatik uygulanır |
 
 ## Ekranlar (referans ekranlardan)
 

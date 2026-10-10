@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'models/home_category.dart';
 import 'providers/settings_provider.dart';
 import 'screens/browser_screen.dart';
+import 'screens/device_mode_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/media_category_screen.dart';
 import 'screens/recycle_bin_screen.dart';
@@ -48,15 +49,24 @@ class _MakayAppState extends State<MakayApp> {
   /// Uygulama yaşam döngüsünde yalnızca bir kez sorgulanır.
   static bool _updateChecked = false;
 
+  /// Sürüm seçimi (device_mode_chosen) yeni tamamlandı mı?
+  bool _selectionJustDone = false;
+
   @override
   void initState() {
     super.initState();
-    // Her açılışta GitHub deposunda yeni sürüm sorgulanır (A15).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdate());
+    // Her açılışta GitHub depoda yeni sürüm sorgulanır (A15/A17).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _selectionJustDone = context.read<SettingsProvider>().deviceModeChosen;
+      _checkUpdate();
+    });
   }
 
   Future<void> _checkUpdate() async {
     if (_updateChecked) return;
+    if (!mounted) return;
+    // Sürüm seçim ekranı (ilk açılış) kapanmadan güncelleme sorma.
+    if (!context.read<SettingsProvider>().deviceModeChosen) return;
     _updateChecked = true;
     try {
       final info = await UpdateService.check();
@@ -75,6 +85,11 @@ class _MakayAppState extends State<MakayApp> {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    // Sürüm seçimi yapıldıktan sonra ertelenen güncelleme kontrolünü çalıştır.
+    if (settings.deviceModeChosen && !_selectionJustDone) {
+      _selectionJustDone = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdate());
+    }
     return MaterialApp(
       title: 'Makay Dosya Yöneticisi',
       debugShowCheckedModeBanner: false,
@@ -140,6 +155,10 @@ class _HomeLauncher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    // İlk açılış: sürüm seçimi yapılmadıysa seçim ekranı (A18).
+    if (!settings.deviceModeChosen) {
+      return const DeviceModeScreen();
+    }
     switch (settings.tvMode) {
       case 'tv':
         return const TvHomeScreen();

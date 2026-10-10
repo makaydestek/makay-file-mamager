@@ -41,6 +41,19 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _pickUiMode(context, settings),
           ),
           ListTile(
+            title: const Text('Sürüm seçimini göster'),
+            subtitle: const Text('Mobil-Tablet / TV seçim ekranı yeniden açılsın'),
+            leading: const Icon(Icons.restart_alt_rounded),
+            onTap: () {
+              settings.deviceModeChosen = false;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Seçim ekranı açılışta yeniden gösterilecek'),
+                ),
+              );
+            },
+          ),
+          ListTile(
             title: const Text('Varsayılan uygulamalar'),
             subtitle: const Text('Dosya türleri için varsayılan uygulamalar'),
             leading: const Icon(Icons.open_in_new_rounded),

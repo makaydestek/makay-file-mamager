@@ -17,6 +17,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kShowSystemStorage = 'show_system_storage';
   static const _kStorageWarnPercent = 'storage_warn_percent';
   static const _kTvMode = 'tv_mode';
+  static const _kDeviceModeChosen = 'device_mode_chosen';
 
   static Future<SettingsProvider> load() async =>
       SettingsProvider(await SharedPreferences.getInstance());
@@ -98,5 +99,26 @@ class SettingsProvider extends ChangeNotifier {
   set tvMode(String value) {
     _prefs.setString(_kTvMode, value);
     notifyListeners();
+  }
+
+  /// İlk açılıştaki "Mobil-Tablet / TV sürümü" seçimi yapıldı mı?
+  /// Yapılmadıysa uygulama [DeviceModeScreen] ile açılır.
+  bool get deviceModeChosen => _prefs.getBool(_kDeviceModeChosen) ?? false;
+
+  set deviceModeChosen(bool value) {
+    _prefs.setBool(_kDeviceModeChosen, value);
+    notifyListeners();
+  }
+
+  /// Sürüm seçimi: 'phone' (Mobil-Tablet) veya 'tv' (TV Sürümü).
+  /// Seçime göre gereken ayarları otomatik uygular:
+  /// • TV → kumanda odaklı TV arayüzü + koyu tema
+  /// • Telefon/tablet → klasik dokunmatik arayüz
+  void applyDeviceMode(String mode) {
+    tvMode = mode;
+    if (mode == 'tv') {
+      themeMode = ThemeMode.dark;
+    }
+    deviceModeChosen = true;
   }
 }

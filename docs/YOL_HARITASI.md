@@ -229,6 +229,20 @@
       temizlendi (sürüm ayrıştırma artık regex değil `jsonDecode`)
 - [x] `flutter analyze` temiz
 
+### A18 — İlk Açılış Sürüm Seçimi (Mobil-Tablet / TV) ✅
+- [x] **DeviceModeScreen**: uygulama ilk açıldığında iki kart —
+      "Mobil-Tablet Sürümü" (dokunmatik klasik arayüz) ve
+      "TV Sürümü" (kumanda odaklı, büyük kart arayüz); tek dokunuş/D-pad
+      ile seçim kalıcılaşır, ekran bir daha gösterilmez
+- [x] **Otomatik ayarlar**: seçim `SettingsProvider.applyDeviceMode`
+      ile uygulanır — TV → `tvMode=tv` + koyu tema + TV ana ekran
+      (TvHomeScreen); Mobil-Tablet → `tvMode=phone` + klasik HomeScreen
+- [x] **Güncelleme kontrolü** iki adımlı: sürüm seçimi yapılmadan
+      güncelleme sormaz, seçim yapıldıktan hemen sonra sorgular
+- [x] Ayarlar → **"Sürüm seçimini göster"**: seçim ekranı yeniden açılır
+- [x] 3 yeni widget testi (seçim ekranı + mod uygulama); analiz temiz,
+      testler 33/33
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.
