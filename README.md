@@ -58,9 +58,11 @@ Uygulama **her açılışında** GitHub deposunu
 (`github.com/makaydestek/makay-file-mamager`) sorgular; `APK/latest.json`
 içinde yeni sürüm varsa indirme diyaloğu açılır. İndirilen APK **SHA256**
 ile doğrulanır (eşleşmezse silinir) ve Android kurucusuna açılır.
-Sürüm artışı `Apk Hazırla.bat` ile yapılır; betik ayrıca
-`*.apk.sha256` yan dosyalarını üretir ve güncelleme üçlüsünü
-(`latest.apk` + `latest.apk.sha256` + `latest.json`) depoya iter.
+Sürüm artışı `Apk Hazırla.bat` ile yapılır; betik **mimariye bölünmüş**
+(`--split-per-abi`, cihaz başına ~20 MB) üç APK üretir, `*.sha256` yan
+dosyalarını ekler ve `latest-<abi>.apk` + `latest-<abi>.apk.sha256` +
+`latest.json` dosyalarını depoya iter; cihaz kendi mimarisine (arm64-v8a /
+armeabi-v7a / x86_64) uygun paketi indirir.
 
 ## Çalıştırma
 
@@ -71,6 +73,8 @@ flutter run -d chrome
 # Android (cihaz/emülatör)
 flutter run -d android
 
-# Release APK
-flutter build apk --release
+# Release APK (mimariye bölünmüş: arm64-v8a / armeabi-v7a / x86_64)
+flutter build apk --release --split-per-abi
+
+# Tamamlanmış sürüm (sürüm artışı + sha256 + depoya yayın): Apk Hazırla.bat
 ```

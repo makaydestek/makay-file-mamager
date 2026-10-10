@@ -109,4 +109,17 @@ class PlatformService {
       return false;
     }
   }
+
+  /// Cihazın desteklediği mimariler (birincil önce, ör. arm64-v8a).
+  static Future<List<String>> supportedAbis() async {
+    if (!supported) return const [];
+    try {
+      final list = await _channel.invokeListMethod<String>('getSupportedAbis');
+      return list ?? const [];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
 }

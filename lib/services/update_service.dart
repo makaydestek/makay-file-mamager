@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'platform_service.dart';
+
 /// GitHub deposundaki `APK/latest.json` içindeki güncelleme bilgileri.
 class UpdateInfo {
   const UpdateInfo({
@@ -15,6 +17,7 @@ class UpdateInfo {
     required this.size,
     required this.sha256,
     required this.url,
+    this.abi = '',
   });
 
   /// Yeni sürüm adı (örn. "1.0.3").
@@ -32,9 +35,13 @@ class UpdateInfo {
   /// APK indirme adresi.
   final String url;
 
-  static const String defaultDownloadUrl =
-      'https://raw.githubusercontent.com/makaydestek/makay-file-mamager/main/APK/latest.apk';
+  /// Seçilen paket mimarisi (örn. "arm64-v8a"); eski JSON'da boş.
+  final String abi;
 
+  static const String defaultDownloadUrl =
+      'https://raw.githubusercontent.com/makaydestek/makay-file-mamager/main/APK/latest-arm64-v8a.apk';
+
+  /// Eski/birincil JSON alanları (arm64-v8a).
   factory UpdateInfo.fromMap(Map<String, dynamic> map) {
     final url = map['url'];
     return UpdateInfo(
@@ -43,6 +50,24 @@ class UpdateInfo {
       size: (map['size'] as num?)?.toInt() ?? 0,
       sha256: ((map['sha256'] as String?) ?? '').trim().toLowerCase(),
       url: (url is String && url.isNotEmpty) ? url : defaultDownloadUrl,
+      abi: ((map['abi'] as String?) ?? ''),
+    );
+  }
+
+  /// `abis` haritasındaki cihaza uygun paket.
+  factory UpdateInfo.forAbi(
+    Map<String, dynamic> map,
+    String abi,
+    Map<String, dynamic> entry,
+  ) {
+    final url = entry['url'];
+    return UpdateInfo(
+      version: (map['version'] as String?) ?? '',
+      versionCode: (map['versionCode'] as num?)?.toInt() ?? 0,
+      size: (entry['size'] as num?)?.toInt() ?? 0,
+      sha256: ((entry['sha256'] as String?) ?? '').trim().toLowerCase(),
+      url: (url is String && url.isNotEmpty) ? url : defaultDownloadUrl,
+      abi: abi,
     );
   }
 }
@@ -76,11 +101,15 @@ class UpdateService {
         final resp = await req.close().timeout(const Duration(seconds: 12));
         if (resp.statusCode != 200) return null;
         final body = await resp.transform(utf8.decoder).join();
-        final info =
-            UpdateInfo.fromMap(jsonDecode(body) as Map<String, dynamic>);
-        if (info.version.isEmpty || info.sha256.isEmpty) return null;
+        final map = jsonDecode(body) as Map<String, dynamic>;
+        final version = (map['version'] as String?) ?? '';
+        if (version.isEmpty) return null;
         final pkg = await PackageInfo.fromPlatform();
-        return _isNewer(info.version, pkg.version) ? info : null;
+        if (!_isNewer(version, pkg.version)) return null;
+        // Cihazın mimarisine uygun paketi seç (split-per-abi).
+        final info = await _resolveForDevice(map);
+        if (info == null || info.sha256.isEmpty) return null;
+        return info;
       } finally {
         client.close(force: true);
       }
@@ -88,6 +117,33 @@ class UpdateService {
       // Çevrimdışı / yavaş ağ → sessizce vazgeç.
       return null;
     }
+  }
+
+  /// JSON'daki `abis` haritasından cihaza uygun paketi seçer.
+  /// Uygun paket yoksa null (güncelleme sessizce atlanır).
+  static Future<UpdateInfo?> _resolveForDevice(
+      Map<String, dynamic> map) async {
+    final abisRaw = map['abis'];
+    if (abisRaw is! Map) return UpdateInfo.fromMap(map); // eski format
+    final entries = <String, Map<String, dynamic>>{};
+    abisRaw.forEach((key, value) {
+      if (value is Map) entries[key] = Map<String, dynamic>.from(value);
+    });
+    if (entries.isEmpty) return UpdateInfo.fromMap(map);
+
+    var supported = await PlatformService.supportedAbis();
+    if (supported.isEmpty) supported = const ['arm64-v8a'];
+
+    for (final abi in supported) {
+      final entry = entries[abi];
+      if (entry != null) return UpdateInfo.forAbi(map, abi, entry);
+    }
+    // arm64 cihazlar armeabi-v7a paketini de çalıştırabilir.
+    if (supported.first.startsWith('arm64')) {
+      final entry = entries['armeabi-v7a'];
+      if (entry != null) return UpdateInfo.forAbi(map, 'armeabi-v7a', entry);
+    }
+    return null;
   }
 
   /// "1.0.3" > "1.0.2" biçiminde sürüm karşılaştırması.

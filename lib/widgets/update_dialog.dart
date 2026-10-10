@@ -112,7 +112,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             if (widget.info.size > 0) ...[
               const SizedBox(height: 4),
               Text(
-                'İndirme boyutu: ${Formats.size(widget.info.size)} • '
+                'İndirme boyutu: ${Formats.size(widget.info.size)}'
+                '${widget.info.abi.isEmpty ? '' : ' (${widget.info.abi})'} • '
                 'SHA256 ile doğrulanacak',
                 style: theme.textTheme.bodySmall,
               ),

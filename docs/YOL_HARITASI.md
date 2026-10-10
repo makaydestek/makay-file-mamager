@@ -193,6 +193,21 @@
       kontrolü" (elle sorgulama)
 - [x] `package_info_plus` eklendi; analiz temiz, testler 30/30
 
+### A16 — APK Boyut Optimizasyonu ✅
+- [x] Ölçüm: 61 MB'ın %97'si `lib/` — **3 mimari tek APK'da** geliyordu
+      (arm64 19,9 + arm32 17,9 + x86_64 21,4 MB)
+- [x] `flutter build apk --release --split-per-abi` → tek cihaz yalnızca
+      kendi mimarisini indirir (**~20 MB**, 3 kat küçülme)
+- [x] `tool/make_release_json.ps1`: mimari başına `*.sha256` yan dosyaları +
+      `abis` hariteli `latest.json` (birincil alanlar arm64 ile uyumlu)
+- [x] `UpdateService`: cihaz mimarisini Kotlin kanalından okur
+      (`getSupportedAbis` → `Build.SUPPORTED_ABIS`), `abis` haritasından
+      uygun paketi seçer (arm64 → arm32 yedeklemesi var); uygun paket
+      yoksa güncelleme sessizce atlanır
+- [x] Kullanılmayan `installed_apps` bağımlılığı kaldırıldı
+- [x] Betik: 3 APK → `APK\MakayFileManager-<sur>-<abi>.apk` +
+      `latest-<abi>.apk` + otomatik git yayını
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.
