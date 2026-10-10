@@ -52,6 +52,10 @@ APK/MakayFileManager-*.apk
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Gradle artıkları (asla commit edilmez)
+/android/build/
+**/.gradle/
+*.hprof
 
 # Widget Preview related
 .widget_preview/
