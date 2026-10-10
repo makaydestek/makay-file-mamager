@@ -214,9 +214,17 @@
       **`.apk.sha256` asset'i okunup zorunlu SHA256 doğrulaması**
       yapılır, Release notları (`body`) diyalogta gösterilir
 - [x] **Betik**: tek APK + `*.apk.sha256` yan dosyası üretir →
-      `gh release create` ile Release'ı **otomatik yayınlar**; APK'lar
-      git'e girmez (`APK/` gitignore) — depo hafif, dağıtım Release
-      üzerinden
+      `gh api` ile Release'ı **otomatik yayınlar**; APK'lar git'e
+      girmez (`APK/` gitignore) — depo hafif, dağıtım Release üzerinden
+- [x] **Release biçimi** (kullanıcı isteği, referans: makay-video-player):
+      başlık/açıklama boş → GitHub sayfada etiketi ve commit mesajını
+      (`Yayin: MakayFileManager v...`) gri kutuda gösterir; betik commit
+     'i release'ten önce atar ki etiket doğru mesaja işaret etsin
+- [x] **Otomatik eski sürüm temizliği** (kullanıcı isteği): yeni release
+      oluşturulduğunda diğer tüm release'lar **etiketiyle birlikte**
+      silinir (`gh release delete --cleanup-tag`), yerel `APK`
+      klasöründeki eski sürüm dosyaları da kaldırılır — geriye yalnızca
+      güncel sürüm kalır
 - [x] Eski `latest.json`/split dosyaları/`make_release_json.ps1`
       temizlendi (sürüm ayrıştırma artık regex değil `jsonDecode`)
 - [x] `flutter analyze` temiz

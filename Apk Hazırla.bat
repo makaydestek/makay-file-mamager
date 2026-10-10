@@ -57,28 +57,49 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo GitHub Release yayinlaniyor...
-gh release view "%VER%" >nul 2>&1
-if errorlevel 1 goto :createrelease
-gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber >nul 2>&1
-if errorlevel 1 echo [Uyari] Release guncellenemedi - "gh auth status" kontrol edin.
-goto :releaseend
-:createrelease
-gh release create "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --title "MakayFileManager v%VER%" --notes "Yayin: MakayFileManager v%VER% - APK ve SHA256 ozeti eklenmistir." >nul 2>&1
-if errorlevel 1 echo [Uyari] GitHub Release olusturulamadi - "gh auth status" kontrol edin.
-:releaseend
+echo Eski yerel surumler temizleniyor...
+for %%F in ("APK\MakayFileManager-*.apk") do (
+  if /i not "%%~nxF"=="MakayFileManager-%VER%.apk" del /q "%%F" >nul 2>&1
+)
+for %%F in ("APK\MakayFileManager-*.apk.sha256") do (
+  if /i not "%%~nxF"=="MakayFileManager-%VER%.apk.sha256" del /q "%%F" >nul 2>&1
+)
 
 echo Depoya yayinlaniyor (git)...
 git add "version.properties" "pubspec.yaml" >nul 2>&1
 git diff --cached --quiet >nul 2>&1
-if not errorlevel 1 goto :nopublish
-git commit -m "Yayin: MakayFileManager v%VER%" >nul 2>&1
-git push origin main >nul 2>&1
-if errorlevel 1 echo [Uyari] Depoya itilemedi - manuel "git push" yapin.
-:nopublish
+if errorlevel 1 (
+  git commit -m "Yayin: MakayFileManager v%VER%" >nul 2>&1
+  git push origin main >nul 2>&1
+  if errorlevel 1 echo [Uyari] Depoya itilemedi - manuel "git push" yapin.
+)
+
+echo GitHub Release olusturuluyor (etiket = bu commit)...
+gh release view "%VER%" >nul 2>&1
+if errorlevel 1 goto :createrelease
+gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber >nul 2>&1
+goto :releaseend
+:createrelease
+rem Baslik ve aciklama bos birakilir: GitHub sayfayi etiket + commit
+rem mesaji ("Yayin: MakayFileManager v...") biciminde gosterir.
+gh api -X POST repos/:owner/:repo/releases -f tag_name=%VER% >nul 2>&1
+if errorlevel 1 (
+  echo [Uyari] GitHub Release olusturulamadi - "gh auth status" kontrol edin.
+  goto :releaseend
+)
+gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" >nul 2>&1
+:releaseend
+
+echo Eski GitHub surumleri siliniyor (yalnizca %VER% kalir)...
+gh release view "%VER%" >nul 2>&1
+if errorlevel 1 goto :noold
+for /f "delims=" %%T in ('gh release list --json tagName -q ".[].tagName" 2^>nul') do (
+  if not "%%T"=="%VER%" gh release delete "%%T" --yes --cleanup-tag >nul 2>&1
+)
+:noold
 
 start "" "%~dp0APK"
 echo.
 echo APK hazir: APK\MakayFileManager-%VER%.apk
-echo GitHub Release %VER% yayinda - uygulama acilista guncelleme isteyecektir.
+echo GitHub Release %VER% yayinda - eski surumler otomatik silindi.
 pause

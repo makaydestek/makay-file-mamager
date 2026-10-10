@@ -66,6 +66,11 @@ Sürüm artışı `Apk Hazırla.bat` ile yapılır; betik **tek yapıda** tek AP
 üretir (`flutter build apk --release` — arm64 + arm32 + x86_64 tek
 dosyada, kullanıcı mimari seçmez), `*.apk.sha256` yan dosyasını ekler ve
 APK + özet ikilisini **otomatik GitHub Release** olarak yayınlar.
+Yayın biçimi: release başlığı ve açıklaması **boş bırakılır** — GitHub
+sayfada etiketi ve commit mesajını (`Yayin: MakayFileManager v...`)
+gösterir. Release oluşturulduğunda **eski sürümler otomatik silinir**
+(release + etiket, geriye yalnızca en güncel sürüm kalır) ve yerel
+`APK` klasöründeki eski sürüm dosyaları da temizlenir.
 APK dosyaları git'e girmez (`APK/` yok sayılır) — dağıtım tamamen
 Release üzerinden yapılır, depo hafif kalır.
 
