@@ -19,6 +19,7 @@ class MiniFtpServer {
     required this.username,
     required this.password,
     this.showHidden = false,
+    this.bindAddress,
   });
 
   /// Sunucunun kök dizini.
@@ -32,6 +33,16 @@ class MiniFtpServer {
   final String username;
   final String password;
   final bool showHidden;
+
+  /// Sunucunun bağlanacağı arayüz.
+  ///
+  /// Varsayılan `null` → `anyIPv4`, yani her arayüzde dinler (üretim
+  /// davranışı). Testler yalnızca loopback üzerinden konuşur; loopback'e
+  /// bağlanmak dışarıdan gelebilecek port taraması ya da el sıkışmadan
+  /// koparmaları tamamen dışarıda bırakır.
+  final InternetAddress? bindAddress;
+
+  InternetAddress get _bind => bindAddress ?? InternetAddress.anyIPv4;
 
   /// Gömülü sertifika bağlamı (tek örnek).
   static final SecurityContext _tlsContext = () {
@@ -63,7 +74,7 @@ class MiniFtpServer {
 
   Future<void> start() async {
     if (running) return;
-    final control = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+    final control = await ServerSocket.bind(_bind, port);
     _control = control;
     _log.add('FTP sunucusu başladı: port ${control.port}');
     // onError şart: dinleyici düzeyinde gelen bir soket hatası (örn. geçici
@@ -75,8 +86,7 @@ class MiniFtpServer {
     );
     if (enableTls) {
       try {
-        final tls =
-            await ServerSocket.bind(InternetAddress.anyIPv4, tlsPort);
+        final tls = await ServerSocket.bind(_bind, tlsPort);
         _tlsControl = tls;
         _log.add('FTPS sunucusu başladı: port ${tls.port} (şifreli)');
         tls.listen(
@@ -516,14 +526,14 @@ class _FtpSession {
     for (var attempt = 0; attempt < maxCandidates; attempt++) {
       try {
         return await ServerSocket.bind(
-          InternetAddress.anyIPv4,
+          _bind,
           server.pickDataPort(),
         );
       } on SocketException {
         // Bu port dolu — sıradaki adaya geç.
       }
     }
-    return ServerSocket.bind(InternetAddress.anyIPv4, 0);
+    return ServerSocket.bind(_bind, 0);
   }
 
   Future<void> _cleanupTransfer() async {

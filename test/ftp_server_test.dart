@@ -36,6 +36,9 @@ void main() {
       tlsPort: 0,
       username: 'android',
       password: 'sifre123',
+      // Yalnızca loopback: dinleyici dışarıdan erişilemez; testin konuşmadığı
+      // bir arayüze gelen bağlantı ya da tarama el sıkışmayı bozamaz.
+      bindAddress: InternetAddress.loopbackIPv4,
     );
     await server.start();
     port = server.boundPort;
