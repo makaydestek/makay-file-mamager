@@ -5,6 +5,7 @@ import '../services/analysis_service.dart';
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
 import '../utils/text_utils.dart';
+import '../widgets/app_icon.dart';
 import '../widgets/treemap_view.dart';
 import 'apps_screen.dart';
 import 'large_files_screen.dart';
@@ -244,9 +245,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             for (final app in _topApps)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: app.icon != null
-                    ? Image.memory(app.icon!, width: 32, height: 32)
-                    : const Icon(Icons.android_rounded),
+                leading: AppIcon(app, size: 32),
                 title: Text(app.name),
                 trailing: Text(
                   app.size > 0 ? Formats.size(app.size) : '—',

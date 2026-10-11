@@ -27,6 +27,7 @@ tüm özellikler her kullanıcıya açıktır:
 | İzin onayı | Dosya/medya izinleri kullanıcıdan istenir; onaysız açılmaz |
 | Görünüm stili | Otomatik / Dengeli / Geniş / Sık — dikey-yatay sütun sayısı seçilebilir |
 | Kategori boyutları | Ana ekran kartlarında başlık altında özet boyut (arka planda hesaplanır) |
+| Kartları göster / gizle | İstemediğiniz ana ekran kartlarını gizleyin (ayarlar veya ana ekran menüsünden) |
 | Mükerrer dosyalar | Aynı içeriğe sahip kopyaları bulma, tek kopya bırakıp temizleme |
 | Görsel harita | Bellek analizinde treemap ile kategori alanlarının görselleştirilmesi |
 | Çift panel sürükle-bırak | Tablette listeden klasör ağacına sürükleme ile kopyalama |
@@ -45,13 +46,19 @@ tüm özellikler her kullanıcıya açıktır:
 ## Ekranlar (referans ekranlardan)
 
 1. **Ana Ekran** — kategori ızgarası: Ana bellek, İndirilenler, Bellek Analizi,
-   Resimler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Bulut, Uzak,
+   Resimler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Uzak,
    **Kasa**, **USB / SD**, Ağdan erişim
-   (kartların altında özet boyut; görüntü stili ayarlar'dan değiştirilebilir)
+   (kartların altında özet boyut; görüntü stili ve kartları göster/gizle
+   ayarlar'dan değiştirilebilir)
+   > **Not:** "Bulut" kartı, Google Drive OAuth doğrulaması tamamlanana
+   > kadar listeden **çıkarılmıştır** — kullanıcıya ne ana ekranda ne de
+   > göster/gizle listesinde görünmez. Doğrulama bitince tek satır geri
+   > eklenir (`lib/models/home_category.dart`).
 2. **Çekmece (Drawer)** — Ana Ekran, Ana bellek (%), Geri Dönüşüm Kutusu, **Kasa**,
    **USB / SD Kart**, **Mükerrer dosyalar**, ağ sunucuları,
    hızlı kategoriler (Yeni Dosyalar, Belgeler, Videolar, Ses, Resimler, İndirilenler)
-3. **Dosya Tarayıcı** — breadcrumb, liste/ızgara, sıralama, filtre, arama,
+3. **Dosya Tarayıcı** — tek satırlık başlık (geri oku + ad), liste/ızgara,
+   sıralama, filtre, arama,
    dosya işlemleri; satır menüsü (metin/hex/SQLite açma, **kasaya taşıma**,
    **chmod**); tablette çift panel **sürükle-bırak kopyalama**
 4. **Bellek Analizi** — kullanım yüzdesi, kategori dağılımı, **görsel harita (treemap)**,
@@ -60,16 +67,22 @@ tüm özellikler her kullanıcıya açıktır:
    **APK yedekleme**
 6. **Ağdan Erişim** — FTP sunucu başlat (rastgele şifre, gizli dosyaları göster)
 7. **Uzak** — FTP/SMB/SFTP/WebDAV uzak konum ekleme ve gezinme
-8. **Bulut** — bulut sağlayıcı hesapları ekleme; Google Drive, **Dropbox**,
-   **OneDrive**, **Box** tarayıcı OAuth2 ile bağlanır
-9. **Yeni Dosyalar** — son 7 günde değişen dosyalar, satırlarda (Tarih • Boyut)
+8. **Bulut** *(şu an kullanıcıya kapalı)* — bulut sağlayıcı hesapları ekleme;
+   Google Drive, **Dropbox**, **OneDrive**, **Box** tarayıcı OAuth2 ile bağlanır.
+   Kod ve rota hazırdır; Google Drive doğrulaması tamamlanınca kart açılır
+9. **Yeni Dosyalar** — son 7 günde değişen dosyalar, satırlarda (Tarih • Boyut);
+   **Temizle** (tek dokunuş) listeyi boşaltır — dosyalar **silinmez** ve bir
+   daha listelenmez; cihaza yeni eklenen/değişen dosyalar görünür. Boş
+   ekrandaki **Tüm geçmişi tekrar göster** düğmesi temizlemeyi geri alır;
+   aşağı kaydırmak ise yalnızca taramayı yeniler (temizlenenler dönmez)
 10. **Geçici Dosyalar** — önbellek/.tmp temizliği + **mükerrer dosya taraması**
 11. **Kasa** — PIN oluşturma/kilit açma, şifreli dosya listesi, dışa aktarma, silme
 12. **USB / SD Kart** — bağlı harici birimlerin listesi ve gezinme
 13. **Metin Editörü / Hex / SQLite / Arşiv** — dosya türüne göre açılan
     görüntüleyiciler ve arşiv gezginicisi
 14. **Ayarlar** — dosya boyutu birimi, tarih biçimi, **görünüm stili**,
-    **Material You**, **Kasa/USB/Mükerrer** kısayolları, gelişmiş ayarlar,
+    **ana ekran kartlarını göster/gizle**, **Material You**, **Kasa/USB/Mükerrer**
+    kısayolları, gelişmiş ayarlar,
     geri dönüşüm kutusu ayarları, bildirimler, tema (açık/koyu/sistem), izinler
 
 ## Geliştirme Aşamaları
@@ -78,7 +91,7 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
 
 - **A0** — Ortam kurulumu (Flutter SDK, Android SDK) ✅
 - **A1** — Proje iskeleti: tema, navigasyon, ana ekran, çekmece
-- **A2** — Dosya tarayıcı (gezinme, breadcrumb, sıralama, arama, dosya işlemleri)
+- **A2** — Dosya tarayıcı (gezinme, sıralama, arama, dosya işlemleri)
 - **A3** — Kategori ekranları (Görüntüler/Videolar/Ses/Belgeler/İndirilenler/Yeni Dosyalar)
 - **A4** — Bellek analizi + depolama bilgileri
 - **A5** — Ayarlar + tema + geri dönüşüm kutusu
@@ -99,6 +112,12 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
   kilitlenme geri sayımı), bulut ekranının bölünüp ortak OAuth/HTTP katmanına
   taşınması, kopyala/taşı için ilerleme + iptal, iç içe kopyalama hatasının
   düzeltilmesi, cihaz test matrisi
+- **A22** — kullanıcı düzeltmeleri: ana ekran kartlarını göster/gizle,
+  "Yeni Dosyalar" ekranında dosyaları **silmeden** listeyi temizleme,
+  tarayıcı başlığındaki yol (breadcrumb) şeridinin kaldırılması
+- **A23** — ilk açılışta/çıkışta "yanıt vermiyor (Bekle)" ANR'ı: uygulama
+  listesi ana iş parçacığından arka plana alındı, ikonlar tembel yüklendi;
+  "Yeni Dosyalar" temizlemesi kalıcı (okundu/okunmadı mantığı), tek dokunuş
 
 ## Otomatik Güncelleme
 

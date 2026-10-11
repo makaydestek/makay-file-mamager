@@ -5,6 +5,7 @@ import '../models/home_category.dart';
 import '../providers/settings_provider.dart';
 import '../services/category_size_service.dart';
 import '../widgets/app_drawer.dart';
+import 'home_categories_screen.dart';
 
 /// TV'ye özel ana ekran: odaklı büyük kart ızgarası, kumanda (D-pad)
 /// ipuçları ve uzak tutma (overscan) güvenli kenar boşlukları.
@@ -29,12 +30,28 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // Ayar değiştiğinde ızgara anında yeniden kurulur.
-    final viewStyle = context.watch<SettingsProvider>().viewStyle;
+    final settings = context.watch<SettingsProvider>();
+    final viewStyle = settings.viewStyle;
+    // Kullanıcının gizlediği kartlar TV ızgarasına da girmez.
+    final categories = kHomeCategories
+        .where((c) => settings.isCategoryVisible(c.id))
+        .toList(growable: false);
+    // Odak indeksi gizlenen kartlara kaymasın.
+    if (_focusedIndex >= categories.length) _focusedIndex = 0;
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text('Makay Dosya Yöneticisi'),
         actions: [
+          IconButton(
+            tooltip: 'Kartları göster / gizle',
+            icon: const Icon(Icons.tune_rounded, size: 30),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const HomeCategoriesScreen(),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Ayarlar',
             icon: const Icon(Icons.settings_rounded, size: 30),
@@ -50,7 +67,9 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
             height: 40,
             child: Center(
               child: Text(
-                kHomeCategories[_focusedIndex].title,
+                categories.isEmpty
+                    ? 'Tüm kartlar gizlendi'
+                    : categories[_focusedIndex].title,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.primary,
@@ -70,6 +89,19 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                   'small' => portrait ? 4 : 6,
                   _ => constraints.maxWidth > 1200 ? 5 : 4,
                 };
+                if (categories.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text(
+                        'Göstermek istediğiniz kartları seçin.',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                  );
+                }
                 return ValueListenableBuilder<Map<String, String>>(
                   valueListenable: CategorySizeService.labels,
                   builder: (context, sizes, _) => GridView.builder(
@@ -81,10 +113,10 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                       crossAxisSpacing: 20,
                       childAspectRatio: 1.15,
                     ),
-                    itemCount: kHomeCategories.length,
+                    itemCount: categories.length,
                     itemBuilder: (context, index) => _TvCategoryCard(
-                      category: kHomeCategories[index],
-                      label: sizes[kHomeCategories[index].id],
+                      category: categories[index],
+                      label: sizes[categories[index].id],
                       autofocus: index == 0,
                       onFocus: (focused) {
                         if (focused && mounted) {

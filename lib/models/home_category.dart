@@ -19,7 +19,26 @@ class HomeCategory {
   final String? route;
 }
 
-/// Referans uygulamanın ana ekran ızgarasındaki 12 kategori.
+/// Ana ekran ızgarasındaki kategoriler.
+///
+/// **Bulut / Google Drive bu listede YER ALMAZ.** Google Drive OAuth
+/// doğrulaması (restricted scope) tamamlanana kadar kart kullanıcıya hiç
+/// gösterilmez — ne ana ekranda ne de Ayarlar → "Ana ekran kartları"
+/// listesinde; kullanıcı yanlışlıkla açıp çalışmayan bir özelliğe
+/// düşmesin diye kart tamamen listeden çıkarılmıştır.
+///
+/// Doğrulama tamamlandığında aşağıdaki tanımı listeye geri eklemek yeterlidir
+/// (göster/gizle ayarı, rota ve ekranlar zaten hazırdır):
+///
+/// ```dart
+/// HomeCategory(
+///   id: 'cloud',
+///   title: 'Bulut',
+///   icon: Icons.cloud_rounded,
+///   color: Color(0xFF1E88E5),
+///   route: '/cloud',
+/// ),
+/// ```
 const List<HomeCategory> kHomeCategories = [
   HomeCategory(
     id: 'internal',
@@ -83,13 +102,6 @@ const List<HomeCategory> kHomeCategories = [
     icon: Icons.schedule_rounded,
     color: Color(0xFF546E7A),
     route: '/recent',
-  ),
-  HomeCategory(
-    id: 'cloud',
-    title: 'Bulut',
-    icon: Icons.cloud_rounded,
-    color: Color(0xFF1E88E5),
-    route: '/cloud',
   ),
   HomeCategory(
     id: 'remote',

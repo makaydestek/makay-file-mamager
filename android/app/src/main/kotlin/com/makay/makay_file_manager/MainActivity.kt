@@ -3,12 +3,15 @@ package com.makay.makay_file_manager
 import android.app.usage.StorageStatsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.os.StatFs
 import android.content.Intent
@@ -17,18 +20,53 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /// Makay Dosya Yöneticisi ana aktivitesi.
 ///
 /// Ek olarak uygulama genelinde kullanılan platform kanallarını sunar:
 ///  - Depolama bilgisi (StatFs): toplam/boş bayt  → Bellek Analizi (A4)
 ///  - Yüklü uygulamalar (liste, ikon, boyut)     → Uygulamalar ekranı (A6)
+///
+/// **ANR notu**: uygulama listesi ve ikon üretimi ağır işlerdir (paket başına
+/// binder çağrısı + bitmap rasterleştirme + PNG sıkıştırma). Bunlar eskiden
+/// platform kanalı işleyicisinde, yani Android ana iş parçacığında çalışıyor
+/// ve ana ekran her açıldığında "yanıt vermiyor (Bekle)" diyaloğuna yol
+/// açıyordu. Artık [_bg] iş parçacığında çalışır; sonuç ana iş parçacığına
+/// `result.success` ile geri verilir.
 class MainActivity : FlutterActivity() {
 
     private val channelName = "com.makay.filemanager/platform"
 
+    /// Ağır paket kanalı işleri için tek iş parçacıklı yürütücü.
+    private val _bg: ExecutorService = Executors.newSingleThreadExecutor()
+
+    /// Sonuçları ana iş parçacığına döndürmek için.
+    private val _main = Handler(Looper.getMainLooper())
+
     /// Medya izni istek kodu.
     private val REQ_MEDIA = 4201
+
+    /// Ağır kanal çağrısını arka planda çalıştırıp sonucu ana iş parçacığında
+    /// teslim eder. Platform kanalı işleyicisi ana iş parçacığında döndüğü için
+    /// [result.success] yalnızca oradan çağrılmalıdır.
+    private fun <T> runBackground(result: MethodChannel.Result, work: () -> T) {
+        _bg.execute {
+            var value: Any? = null
+            var failure: Exception? = null
+            try {
+                value = work()
+            } catch (e: Exception) {
+                failure = e
+            }
+            _main.post {
+                val err = failure
+                if (err != null) result.error("platform_error", err.message, null)
+                else result.success(value)
+            }
+        }
+    }
 
     /// Android 11+ "tüm dosyalara erişim" verildi mi?
     private fun hasAllFilesAccess(): Boolean =
@@ -69,10 +107,16 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "getInstalledApps" -> {
-                        try {
-                            result.success(installedApps())
-                        } catch (e: Exception) {
-                            result.error("apps_error", e.message, null)
+                        // Ağır iş: ana iş parçacığında kalırsa ANR olur.
+                        // İkon YOK — listeler görünür oldukça tek tek istenir.
+                        runBackground(result) { installedApps() }
+                    }
+
+                    "getAppIcon" -> {
+                        // Tek uygulamanın ikonu (liste ekranı tembel yükler).
+                        val pkg = call.argument<String>("packageName")
+                        runBackground(result) {
+                            appIconPng(pkg ?: return@runBackground null)
                         }
                     }
 
@@ -192,7 +236,11 @@ class MainActivity : FlutterActivity() {
     }
 
     /// Yüklü uygulamalar: ad, paket adı, sürüm, sistem uygulaması mı,
-    /// boyut (StorageStats; izin yoksa -1), APK kaynak yolu ve PNG ikon.
+    /// boyut (StorageStats; izin yoksa -1) ve APK kaynak yolu.
+    ///
+    /// **İkon bilerek dönülmez**: ikon üretmek bitmap rasterleştirme + PNG
+    /// sıkıştırmadır ve yüzlerce uygulamada onlarca saniye sürerdi. İkonlar
+    /// `getAppIcon` ile tek tek, ekranda görünür oldukça istenir.
     private fun installedApps(): List<Map<String, Any?>> {
         val pm = packageManager
         val packages = pm.getInstalledPackages(0)
@@ -205,9 +253,20 @@ class MainActivity : FlutterActivity() {
                 "isSystem" to ((ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
                 "size" to packageSize(pi.packageName, ai.uid),
                 // APK yedekleme: kurulum APK'sının gerçek yolu.
-                "sourceDir" to (ai.sourceDir ?: ""),
-                "icon" to iconPng(pm.getApplicationIcon(ai))
+                "sourceDir" to (ai.sourceDir ?: "")
             )
+        }
+    }
+
+    /// Tek bir uygulamanın ikonu (PNG baytları); bulunamazsa null.
+    private fun appIconPng(packageName: String): ByteArray? {
+        return try {
+            val pm = packageManager
+            iconPng(pm.getApplicationIcon(pm.getApplicationInfo(packageName, 0)))
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -229,6 +288,11 @@ class MainActivity : FlutterActivity() {
                 "path" to dir
             )
         }
+    }
+
+    override fun onDestroy() {
+        _bg.shutdownNow()
+        super.onDestroy()
     }
 
     /// Paket boyutu (API 26+); PACKAGE_USAGE_STATS izni yoksa -1 döner.

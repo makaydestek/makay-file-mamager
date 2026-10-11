@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
+import '../services/recent_seen_store.dart';
 import 'browser_screen.dart' show kAudioExts, kImageExts, kVideoExts;
 import 'image_viewer_screen.dart';
 import 'media_viewer_screen.dart';
@@ -49,6 +50,12 @@ class RecentFilesScreen extends StatefulWidget {
 class _RecentFilesScreenState extends State<RecentFilesScreen> {
   List<RecentFile>? _files;
 
+  /// Kullanıcı listeyi "Temizle" ile boşalttı mı?
+  ///
+  /// Tarama gerçekten boş döndüğü ile kullanıcının temizlediği ayrı mesajlar
+  /// gösterir; dosyalar hiçbir durumda silinmez.
+  bool _cleared = false;
+
   @override
   void initState() {
     super.initState();
@@ -72,9 +79,22 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
         _ScanRequest(root: root, limit: 500, reply: port.sendPort),
       );
       final raw = await port.first as List<Map<String, Object?>>;
-      final files = raw.map(RecentFile.fromMap).toList();
+      final scanned = raw.map(RecentFile.fromMap).toList();
+      // Geçmişi temizlenenler ("okunmuş") tekrar listelenmez — e-posta
+      // okundu/okunmadı mantığı. Yalnızca sonradan eklenen/değişen dosyalar
+      // burada kalır.
+      final seen = await RecentSeenStore.load();
+      final files = scanned
+          .where((f) =>
+              !seen.contains(RecentSeenStore.keyOf(f.path, f.modified)))
+          .toList(growable: false);
       if (!mounted) return;
-      setState(() => _files = files);
+      setState(() {
+        _files = files;
+        // `_cleared` bilinçli olarak SIFIRLANMAZ: aşağı kaydırmak taramayı
+        // yeniler ama geçmişi geri getirmez; "Tüm geçmişi tekrar göster"
+        // düğmesi bu yüzden yenilemeden sonra da ekranda kalır.
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _files = const []);
@@ -83,24 +103,60 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
     }
   }
 
+  /// Temizle butonu: tek dokunuşla listeyi boşaltır.
+  ///
+  /// **Dosyalar silinmez** — yalnızca o an listelenenler "görüldü" olarak
+  /// işaretlenir ve bir daha listelenmez. Cihaza sonradan eklenen (ya da
+  /// değiştirilen) dosyalar yine burada belirir. Onay diyaloğu yoktur:
+  /// işlem geri alınamaz bir veri kaybı değildir.
+  Future<void> _clearList() async {
+    await RecentSeenStore.markSeen(
+      (_files ?? const <RecentFile>[])
+          .map((f) => RecentSeenStore.keyOf(f.path, f.modified)),
+    );
+    if (!mounted) return;
+    setState(() {
+      _files = const [];
+      _cleared = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Liste temizlendi — dosyalarınız silinmedi')),
+    );
+  }
+
+  /// "Tüm geçmişi tekrar göster": temizleme ("görüldü") işaretlerini siler ve
+  /// listeyi geri getirir.
+  ///
+  /// Dosyalara yine dokunulmaz; yalnızca okundu işareti kalkar. Aşağı
+  /// kaydırmak bunu yapmaz — o yalnızca taramayı yeniler (yeni/değişen
+  /// dosyalar gelir, temizlenenler gelmez).
+  Future<void> _restoreHistory() async {
+    await RecentSeenStore.forgetAll();
+    if (!mounted) return;
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final files = _files;
+    final hasFiles = files != null && files.isNotEmpty;
     return Scaffold(
-      appBar: AppBar(title: const Text('Yeni Dosyalar')),
+      appBar: AppBar(
+        title: const Text('Yeni Dosyalar'),
+        actions: [
+          // Yalnızca liste doluyken anlamlı; dosyalara dokunulmaz.
+          if (hasFiles)
+            IconButton(
+              icon: const Icon(Icons.cleaning_services_rounded),
+              tooltip: 'Temizle',
+              onPressed: _clearList,
+            ),
+        ],
+      ),
       body: files == null
           ? const Center(child: CircularProgressIndicator())
-          : files.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Text(
-                      'Son 7 günde değişen dosya bulunamadı.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-              : RefreshIndicator(
+          : hasFiles
+              ? RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -108,7 +164,52 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
                     itemBuilder: (context, index) =>
                         _row(context, files[index]),
                   ),
+                )
+              : _emptyState(),
+    );
+  }
+
+  /// Liste boşken: kaydırarak yenilemeye izin veren kaydırılabilir boş ekran.
+  ///
+  /// Temizleme sonrası (`_cleared`) "Tüm geçmişi tekrar göster" düğmesi de
+  /// çıkar; aşağı kaydırmak bunu **yapmaz**. İkisi ayrıdır:
+  ///
+  /// * **Aşağı kaydırma** → tarama yenilenir; yalnızca sonradan eklenen ya da
+  ///   değiştirilen dosyalar gelir, temizlenenler gelmez.
+  /// * **Düğme** → `RecentSeenStore.forgetAll` ile okundu işaretleri silinir,
+  ///   liste baştan dolar.
+  Widget _emptyState() {
+    final message = _cleared
+        ? 'Geçmişiniz temizlendi.\n'
+            'Cihaza eklenen yeni dosyalar burada belirir.'
+        : 'Son 7 günde değişen yeni dosya yok.\n'
+            'Cihaza yeni dosya eklendiğinde burada görünecek.';
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                  height: 1.5,
                 ),
+          ),
+          if (_cleared) ...[
+            const SizedBox(height: 20),
+            Center(
+              child: OutlinedButton.icon(
+                onPressed: _restoreHistory,
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('Tüm geçmişi tekrar göster'),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

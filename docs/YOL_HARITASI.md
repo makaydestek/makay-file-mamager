@@ -473,6 +473,108 @@ kod tekrarı azaltıldı ve uzun dosya işlemlerine ilerleme/iptal eklendi.
 `vault_service_test` (14), `vault_screen_test` (3),
 `cloud_providers_test` (19) — analiz temiz, tam paket **167/167**.
 
+### A22 — Kullanıcı Düzeltmeleri (Sürüm 1.0.13–1.0.15) ✅
+Kullanıcı ekran görüntülerinden gelen dört maddelik düzeltme turu.
+(Kodun depoya girişi için bölüm sonundaki **Depo notu**'na bakın.)
+
+- [x] **Ana ekran kartlarını göster/gizle**: `SettingsProvider`
+      `hiddenHomeCategories` (SharedPreferences `hidden_home_categories`,
+      sıralı liste) + `isCategoryVisible` / `setCategoryVisible` /
+      `resetHiddenHomeCategories`; yeni `HomeCategoriesScreen`
+      (her kategori için anahtar + "Tümünü göster"). Erişim yolları:
+      Ayarlar → "Ana ekran kartları" ve ana ekran üç nokta menüsündeki
+      "Kartları göster / gizle" (TV ana ekranında ayrıca kanal ikonu).
+      `HomeScreen` + `TvHomeScreen` gizlenen kartları filtreler; tümü
+      gizlenirse boş ekran + yönlendirme düğmesi gösterilir. **Gizleme
+      yalnızca ızgarayı etkiler** — çekmece, ayarlar ve rotalar aynen kalır,
+      yani hiçbir özellik erişilemez olmaz.
+- [x] **"Yeni Dosyalar" temizleme**: app bar'da **Temizle** (süpürge)
+      düğmesi; yalnızca liste doluyken görünür. Onay diyaloğu açıkça
+      "dosyalarınız SİLİNMEZ" der; onaydan sonra `_files` boşaltılır ve
+      `_cleared` ile ayrı boş ekran mesajı gösterilir. Boş ekran artık
+      `AlwaysScrollableScrollPhysics` kullandığı için **aşağı kaydırınca
+      tarama yeniden çalışır** (yeni dosyalar doğru görülür).
+- [x] **Tarayıcı başlığındaki yol şeridi kaldırıldı**: `İndirilenler`,
+      `Belgeler` gibi tarayıcı ekranlarında `storage > emulated > 0 > …`
+      breadcrumb satırı silindi; başlık çubuğu artık albüm ekranlarıyla
+      aynı tek satırlık görünüm (geri oku + ad + arama/sıralama/menü).
+      Kaybolan "Ana dizin" kısayolu taşma menüsünde "Ana ekrana dön" olarak
+      korunur; üst klasörler sistem geri okuyla, tablette sol klasör ağacıyla
+      gezilir.
+- [x] **Bulut kartı geçici olarak kullanıcıya kapatıldı**: Google Drive
+      `drive` scope'u **restricted** olduğu için OAuth doğrulaması
+      (marka doğrulaması + CASA değerlendirmesi) tamamlanana kadar herkesin
+      kendi client ID'siyle geçici bir çözüm sunmak yerine kart
+      `kHomeCategories`'ten **tamamen çıkarıldı** — kullanıcı ne ana ekranda
+      ne de Ayarlar → "Ana ekran kartları" listesinde göremiyor; yanlışlıkla
+      açıp çalışmayan bir özelliğe düşme riski yok. `/cloud` rotası, ekranlar
+      ve servisler **yerinde duruyor**; geri açmak tek satırlık bir iş
+      (tanım `home_category.dart` başındaki notta hazır).
+- [x] **Testler**: `home_categories_test` (5 — gizleme kalıcılığı, menüden
+      açma, tümü gizli boş ekran, sıfırlama), `recent_files_screen_test`
+      (+2 — temizle dosyayı silmez, vazgeçince liste korunur),
+      `browser_screen_test` (2 — breadcrumb yok, alt satır yok).
+      Analiz temiz, tam paket **177/177**.
+
+### A23 — ANR Düzeltmesi + "Yeni Dosyalar" Geçmişi (Sürüm 1.0.13–1.0.15) ✅
+
+**1. İlk açılışta/çıkışta "yanıt vermiyor (Bekle)" uyarısı**
+
+- **Kök neden**: `MainActivity.kt`'deki `getInstalledApps` platform çağrısı
+  **Android ana iş parçacığında** çalışıyordu. `packageSize()` her paket için
+  `StorageStatsManager` binder çağrısı, `iconPng()` her paket için bitmap
+  rasterleştirme + PNG sıkıştırma yapıyordu. 150-250 uygulamalık bir cihazda
+  bu 10-60 saniyelik blok → sistem ANR diyaloğu ("Uygulama yanıt vermiyor —
+  Kapat / **Bekle**"). Ana ekran her açılışta `CategorySizeService.refresh()`
+  → `installedApps()` çağırdığı için ilk açılışta da tetikleniyordu.
+- **Düzeltme**:
+  - `_bg` tek iş parçacıklı yürütücüsü: `getInstalledApps` artık arka planda,
+    sonuç `Handler(Looper.getMainLooper())` ile ana iş parçacığına teslim
+    ediliyor (`result.success` yalnızca oradan çağrılmalı).
+  - Liste çağrısından **ikonlar çıkarıldı** (asıl maliyet buydu).
+  - Yeni `getAppIcon` kanalı: ikon **tek tek ve yalnızca ekrana gelen satır
+    için** istenir; `PlatformService` önbelleğinde tutulur.
+  - Ortak `widgets/app_icon.dart` (`AppIcon`) → Uygulamalar ve Bellek Analizi
+    ekranları tembel yüklemeyi kullanır.
+  - `onDestroy` ile yürütücü kapatılır (sızıntı yok).
+
+**2. "Yeni Dosyalar" — Temizle kalıcı olsun**
+
+- `RecentSeenStore` (`services/recent_seen_store.dart`): "görüldü" kayıtları
+  SharedPreferences'ta `yol|değiştirmeZamanı` anahtarıyla tutulur (üst sınır
+  3000, en eskiler atılır).
+- Tarama sonucu bu kayıtlara göre filtrelenir → temizlenen dosyalar **bir
+  daha listelenmez**. Dosya **değiştirilirse** zaman damgası değişir ve
+  "yeni dosya" olarak yeniden görünür.
+- **Temizle butonu tek dokunuştur** (onay diyaloğu yok): listedekileri
+  işaretler, listeyi boşaltır, SnackBar ile "dosyalarınız silinmedi" der.
+  Veri kaybı olmadığı için ikinci adım gereksizdir.
+- Boş ekran kaydırılabilir (`AlwaysScrollableScrollPhysics`) → aşağı
+  kaydırınca **yalnızca tarama yenilenir**: okundu işaretleri durduğu için
+  temizlenen dosyalar **geri gelmez**, yalnızca sonradan eklenen/değişen
+  dosyalar görünür.
+- **Geri dönüş yolu** boş ekrandaki *"Tüm geçmişi tekrar göster"* düğmesidir:
+  `RecentSeenStore.forgetAll()` ile okundu işaretlerini siler ve listeyi
+  baştan doldurur. Düğme yalnızca kullanıcı Temizle dedikten sonra görünür
+  (`_cleared`) ve yenilemeden sonra da **ekranda kalır** — `_load()`
+  bilinçli olarak `_cleared`'i sıfırlamaz.
+
+**Testler**: `recent_seen_store_test` (5), `recent_files_screen_test` (5 —
+tek dokunuş temizleme, dosya silinmiyor, geçmiş kalıcı, değişen dosya yeniden
+listelenir, aşağı kaydırma geçmişi getirmez / düğme getirir). Analiz temiz,
+tam paket **184/184**.
+
+> **Depo notu**: A22 ve A23'ün kodu, 1.0.13–1.0.15 sürümleri yayınlanırken
+> çalışma ağacında duruyordu ve **hiç commit edilmemişti** — yayın commit'leri
+> (`Yayin: …`) yalnızca `pubspec.yaml` ile `version.properties` dosyalarını
+> değiştiriyordu, dolayısıyla bu iki maddenin kodu depoda yoktu. Kod bu
+> düzeltme turuyla (yanlış "aşağı kaydırınca geçmiş geri gelir" metni,
+> `RecentSeenStore.forgetAll`'ın ölü kod olması, `settings_provider` içindeki
+> var olmayan sembollere doküman referansları, test dosyasının eksik son
+> satır sonu) birlikte commit edilerek depoya girmiştir. Bu not, kodun hangi
+> sürümde çıkarıldığına dair tek doğrulanan kaynaktır: sürüm numaraları
+> git geçmişiyle eşleştirilemiyordu.
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.

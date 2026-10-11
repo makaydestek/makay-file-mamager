@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../models/home_category.dart';
 import '../providers/settings_provider.dart';
 import '../screens/permissions_screen.dart';
+import 'home_categories_screen.dart';
 import '../services/platform_service.dart';
 import '../services/update_service.dart';
 import '../utils/formats.dart';
@@ -51,6 +53,18 @@ class SettingsScreen extends StatelessWidget {
             }),
             leading: const Icon(Icons.grid_view_rounded),
             onTap: () => _pickViewStyle(context, settings),
+          ),
+          ListTile(
+            title: const Text('Ana ekran kartları'),
+            subtitle: Text(
+              'Görünmek istemediğiniz özellikleri gizleyin '
+              '(${kHomeCategories.length - settings.hiddenHomeCategories.length}'
+              ' / ${kHomeCategories.length} görünür)',
+            ),
+            leading: const Icon(Icons.visibility_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HomeCategoriesScreen()),
+            ),
           ),
           SwitchListTile(
             title: const Text('Material You (sistem rengi)'),

@@ -21,6 +21,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kDeviceModeChosen = 'device_mode_chosen';
   static const _kPermissionsOnboarded = 'permissions_onboarded';
   static const _kDynamicColor = 'dynamic_color';
+  static const _kHiddenHomeCategories = 'hidden_home_categories';
 
   static Future<SettingsProvider> load() async =>
       SettingsProvider(await SharedPreferences.getInstance());
@@ -154,4 +155,45 @@ class SettingsProvider extends ChangeNotifier {
     _prefs.setBool(_kDynamicColor, value);
     notifyListeners();
   }
+
+  /// Ana ekranda **gizlenmiş** kategori kimlikleri.
+  ///
+  /// Boş küme = tüm kartlar görünür (varsayılan). Gizlenen kart yalnızca
+  /// ana ekrandan kaldırılır; çekmece, ayarlar ve rotalar etkilenmez, yani
+  /// özellik tamamen erişilemez olmaz.
+  ///
+  /// Kullanıcıya hiç sunulmayan kartlar (örn. doğrulaması tamamlanmamış
+  /// "Bulut") zaten `kHomeCategories` listesinde yer almaz; bunlar bu kümeye
+  /// hiç girmez, gizleme listesi yalnızca gösterilen kartlarla ilgilidir.
+  Set<String> get hiddenHomeCategories =>
+      (_prefs.getStringList(_kHiddenHomeCategories) ?? const <String>[])
+          .toSet();
+
+  set hiddenHomeCategories(Set<String> value) {
+    // Sıralı saklanır: prefs içeriği kararlı ve testlerde öngörülebilir olur.
+    _prefs.setStringList(_kHiddenHomeCategories, value.toList()..sort());
+    notifyListeners();
+  }
+
+  /// Kategori ana ekranda görünür mü?
+  bool isCategoryVisible(String id) => !hiddenHomeCategories.contains(id);
+
+  /// Tek bir kategoriyi gösterir veya gizler.
+  void setCategoryVisible(String id, bool visible) {
+    final hidden = hiddenHomeCategories;
+    if (visible) {
+      hidden.remove(id);
+    } else {
+      hidden.add(id);
+    }
+    hiddenHomeCategories = hidden;
+  }
+
+  /// Tüm ana ekran kartlarını yeniden gösterir.
+  ///
+  /// Bu, kullanıcının kendi kararını da siler: kartlar **hiçbiri varsayılan
+  /// olarak gizli olmadığından** hepsi yeniden görünür olur. Varsayılandan
+  /// gizli kart kavramı bilinçli olarak yoktur — yeni bir kart eklendiğinde
+  /// kullanıcı onu istemediği sürece görünür başlar.
+  void resetHiddenHomeCategories() => hiddenHomeCategories = <String>{};
 }

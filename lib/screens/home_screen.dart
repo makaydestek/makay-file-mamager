@@ -5,6 +5,7 @@ import '../models/home_category.dart';
 import '../providers/settings_provider.dart';
 import '../services/category_size_service.dart';
 import '../widgets/app_drawer.dart';
+import 'home_categories_screen.dart';
 
 /// Uygulama ana ekranı: referans uygulamadaki kategori ızgarası.
 ///
@@ -53,7 +54,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     // Ayar değiştiğinde ızgara anında yeniden kurulur (watch → rebuild).
-    final viewStyle = context.watch<SettingsProvider>().viewStyle;
+    final settings = context.watch<SettingsProvider>();
+    final viewStyle = settings.viewStyle;
+    // Kullanıcının gizlediği kartlar ızgaraya hiç girmez.
+    final categories = kHomeCategories
+        .where((c) => settings.isCategoryVisible(c.id))
+        .toList(growable: false);
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
@@ -64,6 +70,12 @@ class _HomeScreenState extends State<HomeScreen> {
               switch (value) {
                 case 'settings':
                   Navigator.of(context).pushNamed('/settings');
+                case 'home_categories':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const HomeCategoriesScreen(),
+                    ),
+                  );
                 case 'analysis':
                   Navigator.of(context).pushNamed('/analysis');
                 case 'refresh':
@@ -74,6 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             itemBuilder: (context) => const [
+              PopupMenuItem(
+                  value: 'home_categories', child: Text('Kartları göster / gizle')),
               PopupMenuItem(value: 'settings', child: Text('Ayarlar')),
               PopupMenuItem(value: 'analysis', child: Text('Analiz et')),
               PopupMenuItem(value: 'refresh', child: Text('Yenile')),
@@ -81,31 +95,80 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = _columnsFor(viewStyle, constraints);
-          return RefreshIndicator(
-            onRefresh: () => _refresh(force: true),
-            child: ValueListenableBuilder<Map<String, String>>(
-              valueListenable: CategorySizeService.labels,
-              builder: (context, sizes, _) => GridView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.88,
+      body: categories.isEmpty
+          ? _AllHidden(onOpen: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const HomeCategoriesScreen(),
                 ),
-                itemCount: kHomeCategories.length,
-                itemBuilder: (context, index) => _CategoryTile(
-                  category: kHomeCategories[index],
-                  label: sizes[kHomeCategories[index].id],
-                ),
-              ),
+              ))
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = _columnsFor(viewStyle, constraints);
+                return RefreshIndicator(
+                  onRefresh: () => _refresh(force: true),
+                  child: ValueListenableBuilder<Map<String, String>>(
+                    valueListenable: CategorySizeService.labels,
+                    builder: (context, sizes, _) => GridView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 0.88,
+                      ),
+                      itemCount: categories.length,
+                      itemBuilder: (context, index) => _CategoryTile(
+                        category: categories[index],
+                        label: sizes[categories[index].id],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+    );
+  }
+}
+
+/// Tüm kartlar gizlendiğinde gösterilen bilgi ekranı.
+class _AllHidden extends StatelessWidget {
+  const _AllHidden({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.visibility_off_rounded,
+                size: 56, color: theme.colorScheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              'Tüm kartlar gizlendi',
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Göstermek istediğiniz kartları seçin.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.tune_rounded),
+              label: const Text('Kartları göster / gizle'),
+            ),
+          ],
+        ),
       ),
     );
   }

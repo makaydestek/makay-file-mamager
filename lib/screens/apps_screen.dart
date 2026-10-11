@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
+import '../widgets/app_icon.dart';
 
 /// Uygulamalar ekranı: İndirilenler (APK'lar) / Tümü / Dahili (sistem).
 class AppsScreen extends StatefulWidget {
@@ -156,9 +156,7 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
       itemBuilder: (context, index) {
         final app = apps[index];
         return ListTile(
-          leading: app.icon != null
-              ? Image.memory(app.icon!, width: 36, height: 36)
-              : const Icon(Icons.android_rounded),
+          leading: AppIcon(app),
           title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(app.packageName),
           trailing: Column(
@@ -190,9 +188,7 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Image.memory(app.icon ?? Uint8List(0),
-                  width: 32, height: 32, errorBuilder: (_, _, _) =>
-                      const Icon(Icons.android_rounded)),
+              leading: AppIcon(app, size: 32),
               title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${app.packageName} • ${app.versionName}'),
             ),
@@ -309,9 +305,7 @@ class _AppSearchDelegate extends SearchDelegate<String> {
       itemBuilder: (context, index) {
         final app = results[index];
         return ListTile(
-          leading: app.icon != null
-              ? Image.memory(app.icon!, width: 36, height: 36)
-              : const Icon(Icons.android_rounded),
+          leading: AppIcon(app),
           title: Text(app.name),
           subtitle: Text(app.packageName),
           trailing: Text(app.size > 0 ? Formats.size(app.size) : '—'),

@@ -44,7 +44,11 @@ const kTextExts = {
 /// SQLite veritabanı uzantıları (salt okunur görüntüleyici).
 const kSqliteExts = {'db', 'sqlite', 'sqlite3'};
 
-/// Dosya tarayıcı ekranı: breadcrumb, liste, sıralama, arama, dosya işlemleri.
+/// Dosya tarayıcı ekranı: liste, sıralama, arama, dosya işlemleri.
+///
+/// Başlık çubuğu tek satırdır (geri oku + kategori adı + arama/sıralama/menü);
+/// yol şeridi gösterilmez — üst klasörler sistem geri okuyla, tablet'te ise
+/// soldaki klasör ağacıyla gezilir.
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({
     super.key,
@@ -58,7 +62,7 @@ class BrowserScreen extends StatefulWidget {
   /// Gezinilecek başlangıç dizini (null ise desteklenmeyen platform).
   final String? rootPath;
 
-  /// Breadcrumb'da "Ana" kısayol ikonu gösterilsin mi.
+  /// Taşma menüsünde "Ana ekrana dön" kısayolu gösterilsin mi.
   final bool showHomeShortcut;
 
   @override
@@ -888,6 +892,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     _newFolder();
                   case 'refresh':
                     _load();
+                  case 'home':
+                    Navigator.of(context).popUntil((r) => r.isFirst);
                   case 'select_all':
                     setState(() {
                       _selected
@@ -896,10 +902,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     });
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'new_folder', child: Text('Yeni klasör')),
-                PopupMenuItem(value: 'select_all', child: Text('Tümünü seç')),
-                PopupMenuItem(value: 'refresh', child: Text('Yenile')),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'new_folder', child: Text('Yeni klasör')),
+                const PopupMenuItem(value: 'select_all', child: Text('Tümünü seç')),
+                const PopupMenuItem(value: 'refresh', child: Text('Yenile')),
+                // Breadcrumb kaldırıldığı için "Ana ekran" kısayolu burada.
+                if (widget.showHomeShortcut)
+                  const PopupMenuItem(
+                      value: 'home', child: Text('Ana ekrana dön')),
               ],
             ),
           ] else ...[
@@ -961,7 +971,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
         children: [
           // Yer tutucu: ListenableBuilder'ı gövdede tutmak için.
           Offstage(child: clipboard),
-          if (!_selecting) _breadcrumb(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1005,62 +1014,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _breadcrumb() {
-    final sep = Platform.pathSeparator;
-    final parts = <String>[];
-    var rest = _path;
-    while (rest.isNotEmpty) {
-      final i = rest.lastIndexOf(sep);
-      final seg = i >= 0 ? rest.substring(i + 1) : rest;
-      parts.insert(0, seg);
-      rest = i >= 0 ? rest.substring(0, i) : '';
-    }
-    return Material(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SizedBox(
-        height: 44,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          children: [
-            if (widget.showHomeShortcut)
-              IconButton(
-                icon: const Icon(Icons.home_rounded, size: 22),
-                tooltip: 'Ana dizin',
-                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
-              ),
-            for (var i = 0; i < parts.length; i++) ...[
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: Colors.grey),
-              TextButton(
-                onPressed: () {
-                  // İlgili segmente kadar yol bulunur ve oraya dönülür.
-                  final idx = _path.indexOf(sep);
-                  var acc = i == 0 && idx == 0 ? sep : '';
-                  for (var k = 0; k <= i; k++) {
-                    acc = k == 0
-                        ? (i == 0 && idx == 0 ? sep : parts[0])
-                        : '$acc$sep${parts[k]}';
-                  }
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => BrowserScreen(
-                        title: parts[i],
-                        rootPath: acc,
-                        showHomeShortcut: widget.showHomeShortcut,
-                      ),
-                    ),
-                  );
-                },
-                child: Text(parts[i]),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }

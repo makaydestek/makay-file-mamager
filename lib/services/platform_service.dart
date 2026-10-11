@@ -4,15 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Yüklü bir uygulama (Uygulamalar ekranı için).
+///
+/// **İkon listede taşınmaz**: ikon üretimi bitmap rasterleştirme + PNG
+/// sıkıştırmadır ve yüzlerce pakette onlarca saniye sürerdi (Android ana iş
+/// parçacığında ANR'a yol açıyordu). İkon [PlatformService.appIcon] ile tek
+/// tek, satır görünür olduğunda istenir.
 class InstalledApp {
-  InstalledApp({
+  const InstalledApp({
     required this.name,
     required this.packageName,
     required this.versionName,
     required this.isSystem,
     required this.size,
     required this.sourceDir,
-    required this.icon,
   });
 
   final String name;
@@ -26,23 +30,14 @@ class InstalledApp {
   /// Kurulum APK'sının yolu (yedekleme için); alınamazsa boş.
   final String sourceDir;
 
-  /// PNG ikon baytları; alınamazsa null.
-  final Uint8List? icon;
-
-  factory InstalledApp.fromMap(Map<Object?, Object?> map) {
-    final iconData = map['icon'];
-    return InstalledApp(
-      name: (map['name'] as String?) ?? '?',
-      packageName: (map['packageName'] as String?) ?? '',
-      versionName: (map['versionName'] as String?) ?? '',
-      isSystem: (map['isSystem'] as bool?) ?? false,
-      size: (map['size'] as num?)?.toInt() ?? -1,
-      sourceDir: (map['sourceDir'] as String?) ?? '',
-      icon: iconData is Uint8List
-          ? iconData
-          : (iconData is List ? Uint8List.fromList(iconData.cast<int>()) : null),
-    );
-  }
+  factory InstalledApp.fromMap(Map<Object?, Object?> map) => InstalledApp(
+        name: (map['name'] as String?) ?? '?',
+        packageName: (map['packageName'] as String?) ?? '',
+        versionName: (map['versionName'] as String?) ?? '',
+        isSystem: (map['isSystem'] as bool?) ?? false,
+        size: (map['size'] as num?)?.toInt() ?? -1,
+        sourceDir: (map['sourceDir'] as String?) ?? '',
+      );
 }
 
 /// Bağlı depolama birimi (USB OTG / SD kart).
@@ -110,7 +105,7 @@ class PlatformService {
     }
   }
 
-  /// Yüklü uygulamaların listesi.
+  /// Yüklü uygulamaların listesi (ikonlar hariç — bkz. [appIcon]).
   static Future<List<InstalledApp>> installedApps() async {
     if (!supported) return const [];
     try {
@@ -125,6 +120,31 @@ class PlatformService {
     } on MissingPluginException {
       return const [];
     }
+  }
+
+  /// Tek bir uygulamanın PNG ikonu (tembel yükleme).
+  ///
+  /// Sonuçlar [iconCache] içinde tutulur: liste kaydırılırken aynı uygulama
+  /// için ikinci kez platform çağrısı yapılmaz.
+  static final Map<String, Uint8List?> _iconCache = {};
+
+  static Uint8List? cachedIcon(String packageName) =>
+      _iconCache[packageName];
+
+  static Future<Uint8List?> appIcon(String packageName) async {
+    if (!supported || packageName.isEmpty) return null;
+    if (_iconCache.containsKey(packageName)) return _iconCache[packageName];
+    Uint8List? bytes;
+    try {
+      bytes = await _channel
+          .invokeMethod<Uint8List>('getAppIcon', {'packageName': packageName});
+    } on PlatformException {
+      bytes = null;
+    } on MissingPluginException {
+      bytes = null;
+    }
+    _iconCache[packageName] = bytes;
+    return bytes;
   }
 
   /// Cihaz Android TV mi? (Leanback desteği var mı)
