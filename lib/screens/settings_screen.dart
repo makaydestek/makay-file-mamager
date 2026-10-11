@@ -52,6 +52,32 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.grid_view_rounded),
             onTap: () => _pickViewStyle(context, settings),
           ),
+          SwitchListTile(
+            title: const Text('Material You (sistem rengi)'),
+            subtitle: const Text(
+                'Android 12+ cihazlarda uygulama rengini sistemle eşleştir'),
+            secondary: const Icon(Icons.format_color_fill_rounded),
+            value: settings.dynamicColor,
+            onChanged: (v) => settings.dynamicColor = v,
+          ),
+          ListTile(
+            title: const Text('Kasa (gizli klasör)'),
+            subtitle: const Text('PIN ile korunan şifreli dosyalar'),
+            leading: const Icon(Icons.lock_outline_rounded),
+            onTap: () => Navigator.of(context).pushNamed('/vault'),
+          ),
+          ListTile(
+            title: const Text('USB / SD Kart'),
+            subtitle: const Text('Bağlı harici depolama birimleri'),
+            leading: const Icon(Icons.sd_card_rounded),
+            onTap: () => Navigator.of(context).pushNamed('/usb'),
+          ),
+          ListTile(
+            title: const Text('Mükerrer dosyalar'),
+            subtitle: const Text('Aynı içeriğe sahip kopyaları bul'),
+            leading: const Icon(Icons.copy_all_rounded),
+            onTap: () => Navigator.of(context).pushNamed('/duplicates'),
+          ),
           ListTile(
             title: const Text('İzinler'),
             subtitle: const Text('Dosya ve medya izinlerini yönet'),

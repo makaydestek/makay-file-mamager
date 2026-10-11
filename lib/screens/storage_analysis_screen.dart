@@ -4,6 +4,7 @@ import '../models/file_entry.dart';
 import '../services/analysis_service.dart';
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
+import '../widgets/treemap_view.dart';
 import 'apps_screen.dart';
 import 'large_files_screen.dart';
 
@@ -123,6 +124,17 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             ),
             const SizedBox(height: 16),
             _breakdownGrid(theme),
+            const SizedBox(height: 16),
+            // Görsel depolama haritası (treemap): kategori alanları
+            // kare oranına en yakın dikdörtgenlerle çizilir.
+            if (_breakdownEntries().isNotEmpty) ...[
+              Text('Görsel harita', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              TreemapView(
+                items: _breakdownEntries(),
+                height: 200,
+              ),
+            ],
             const Divider(height: 24),
             _moreButton(context, 'DAHA FAZLA', () {
               Navigator.of(context).push(
@@ -137,9 +149,29 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
     );
   }
 
+  /// Kategori dağılımı → treemap öğeleri (boyut > 0).
+  List<TreemapItem> _breakdownEntries() {
+    const colors = <String, Color>{
+      'Resimler': Color(0xFF8E24AA),
+      'Videolar': Color(0xFFD32F2F),
+      'Ses': Color(0xFF00897B),
+      'Belgeler': Color(0xFF1976D2),
+      'Arşivler': Color(0xFF6D4C41),
+      'Diğerleri': Color(0xFF757575),
+    };
+    return [
+      for (final e in _breakdown.entries)
+        if (e.value > 0)
+          TreemapItem(
+            label: e.key,
+            size: e.value,
+            color: colors[e.key] ?? const Color(0xFF9E9E9E),
+          ),
+    ];
+  }
+
   /// Kategori dağılımı: ikon + ad + boyut (2 sütun).
-  Widget _breakdownGrid(ThemeData theme) {
-    const icons = <String, (IconData, Color)>{
+  Widget _breakdownGrid(ThemeData theme) {    const icons = <String, (IconData, Color)>{
       'Resimler': (Icons.image_rounded, Color(0xFF8E24AA)),
       'Videolar': (Icons.video_library_rounded, Color(0xFFD32F2F)),
       'Ses': (Icons.music_note_rounded, Color(0xFF00897B)),

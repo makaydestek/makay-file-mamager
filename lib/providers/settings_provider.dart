@@ -20,6 +20,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kViewStyle = 'view_style';
   static const _kDeviceModeChosen = 'device_mode_chosen';
   static const _kPermissionsOnboarded = 'permissions_onboarded';
+  static const _kDynamicColor = 'dynamic_color';
 
   static Future<SettingsProvider> load() async =>
       SettingsProvider(await SharedPreferences.getInstance());
@@ -142,6 +143,15 @@ class SettingsProvider extends ChangeNotifier {
 
   set permissionsOnboarded(bool value) {
     _prefs.setBool(_kPermissionsOnboarded, value);
+    notifyListeners();
+  }
+
+  /// Material You: Android 12+ sistem (dinamik) rengi kullanılsın mı?
+  /// Eski sürüm/cihazda etkisizdir (dinamik palet yoksa turkuaza döner).
+  bool get dynamicColor => _prefs.getBool(_kDynamicColor) ?? true;
+
+  set dynamicColor(bool value) {
+    _prefs.setBool(_kDynamicColor, value);
     notifyListeners();
   }
 }

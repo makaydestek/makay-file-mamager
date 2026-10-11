@@ -12,12 +12,16 @@ class AppTheme {
   /// Koyu app bar rengi (referans ekranlardaki siyah bar).
   static const Color appBarDark = Color(0xFF212121);
 
-  static ThemeData light() => _base(Brightness.light);
-  static ThemeData dark() => _base(Brightness.dark);
+  /// Material You: Android 12+ sistem (dinamik) ana rengi verilirse ondan
+  /// palet türetilir; verilmezse turkuaz tohum rengi kullanılır.
+  static ThemeData light({Color? dynamicSeed}) =>
+      _base(Brightness.light, dynamicSeed);
+  static ThemeData dark({Color? dynamicSeed}) =>
+      _base(Brightness.dark, dynamicSeed);
 
-  static ThemeData _base(Brightness brightness) {
+  static ThemeData _base(Brightness brightness, Color? dynamicSeed) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: accent,
+      seedColor: dynamicSeed ?? accent,
       brightness: brightness,
     );
     final isDark = brightness == Brightness.dark;

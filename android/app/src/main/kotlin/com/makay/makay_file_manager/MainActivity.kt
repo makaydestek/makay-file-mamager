@@ -151,6 +151,15 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getStorageVolumes" -> {
+                        // USB OTG / SD kart algılama: silinabilir birimler.
+                        try {
+                            result.success(storageVolumes())
+                        } catch (e: Exception) {
+                            result.error("volumes_error", e.message, null)
+                        }
+                    }
+
                     "installApk" -> {
                         // Otomatik güncelleme: indirilen APK'yı kur (A15).
                         val path = call.argument<String>("path")
@@ -183,7 +192,7 @@ class MainActivity : FlutterActivity() {
     }
 
     /// Yüklü uygulamalar: ad, paket adı, sürüm, sistem uygulaması mı,
-    /// boyut (StorageStats; izin yoksa -1) ve PNG ikon.
+    /// boyut (StorageStats; izin yoksa -1), APK kaynak yolu ve PNG ikon.
     private fun installedApps(): List<Map<String, Any?>> {
         val pm = packageManager
         val packages = pm.getInstalledPackages(0)
@@ -195,7 +204,29 @@ class MainActivity : FlutterActivity() {
                 "versionName" to (pi.versionName ?: ""),
                 "isSystem" to ((ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
                 "size" to packageSize(pi.packageName, ai.uid),
+                // APK yedekleme: kurulum APK'sının gerçek yolu.
+                "sourceDir" to (ai.sourceDir ?: ""),
                 "icon" to iconPng(pm.getApplicationIcon(ai))
+            )
+        }
+    }
+
+    /// Bağlı depolama birimleri (USB OTG / SD kart / dahili).
+    ///
+    /// `isRemovable` true olanlar harici (OTG/SD) olarak işaretlenir; Android 9
+    /// ve öncesinde `getStorageVolumes()` API 21+ olduğundan her sürümde çalışır.
+    private fun storageVolumes(): List<Map<String, Any?>> {
+        val sm = getSystemService(Context.STORAGE_SERVICE)
+            as android.os.storage.StorageManager
+        return sm.storageVolumes.map { vol ->
+            val state = try { vol.state } catch (e: Exception) { "" }
+            val dir = try { vol.directory?.path ?: "" } catch (e: Exception) { "" }
+            mapOf(
+                "description" to (vol.getDescription(this) ?: ""),
+                "isRemovable" to vol.isRemovable,
+                "isEmulated" to vol.isEmulated,
+                "state" to state,
+                "path" to dir
             )
         }
     }

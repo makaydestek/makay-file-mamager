@@ -9,10 +9,15 @@ import '../providers/settings_provider.dart';
 import '../services/clipboard_manager.dart';
 import '../services/file_service.dart';
 import '../services/recycle_bin_service.dart';
+import '../services/root_service.dart';
+import '../services/vault_service.dart';
 import '../utils/formats.dart';
 import '../widgets/folder_tree_panel.dart';
+import 'hex_viewer_screen.dart';
 import 'image_viewer_screen.dart';
 import 'media_viewer_screen.dart';
+import 'sqlite_viewer_screen.dart';
+import 'text_editor_screen.dart';
 
 /// Önizleme destekli dosya uzantıları.
 const kImageExts = {
@@ -23,6 +28,16 @@ const kVideoExts = {
   'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', 'm4v', 'ts', 'wmv'
 };
 const kAudioExts = {'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav', 'wma'};
+
+/// Metin editörüyle açılan düz metin uzantıları.
+const kTextExts = {
+  'txt', 'md', 'log', 'csv', 'json', 'xml', 'yaml', 'yml', 'ini', 'conf',
+  'cfg', 'toml', 'html', 'css', 'js', 'dart', 'kt', 'java', 'py', 'sh', 'bat',
+  'gradle', 'properties', 'env', 'srt', 'vtt'
+};
+
+/// SQLite veritabanı uzantıları (salt okunur görüntüleyici).
+const kSqliteExts = {'db', 'sqlite', 'sqlite3'};
 
 /// Dosya tarayıcı ekranı: breadcrumb, liste, sıralama, arama, dosya işlemleri.
 class BrowserScreen extends StatefulWidget {
@@ -169,8 +184,234 @@ class _BrowserScreenState extends State<BrowserScreen> {
               file: File(e.path), isVideo: false),
         ),
       );
+    } else if (kTextExts.contains(ext)) {
+      // Metin editörü: görüntüle + düzenleyip kaydet.
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TextEditorScreen(file: File(e.path), title: e.name),
+        ),
+      );
+    } else if (kSqliteExts.contains(ext)) {
+      // SQLite görüntüleyici: tablolar + satırlar (salt okunur).
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SqliteViewerScreen(file: File(e.path), title: e.name),
+        ),
+      );
     } else {
       _showInfo(e);
+    }
+  }
+
+  /// Satır menüsü: bilgi, metin/hex/SQLite açma, kasaya taşıma.
+  void _rowMenu(FileEntry e) {
+    final ext = e.name.contains('.') ? e.name.split('.').last.toLowerCase() : '';
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: const Text('Bilgi'),
+              onTap: () {
+                Navigator.pop(context);
+                _showInfo(e);
+              },
+            ),
+            if (!e.isDirectory && kTextExts.contains(ext))
+              ListTile(
+                leading: const Icon(Icons.text_snippet_outlined),
+                title: const Text('Metin olarak aç'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          TextEditorScreen(file: File(e.path), title: e.name),
+                    ),
+                  );
+                },
+              ),
+            if (!e.isDirectory)
+              ListTile(
+                leading: const Icon(Icons.data_object_rounded),
+                title: const Text('Hex görüntüle'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          HexViewerScreen(file: File(e.path), title: e.name),
+                    ),
+                  );
+                },
+              ),
+            if (!e.isDirectory && kSqliteExts.contains(ext))
+              ListTile(
+                leading: const Icon(Icons.table_chart_rounded),
+                title: const Text('SQLite tablolarını görüntüle'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SqliteViewerScreen(
+                          file: File(e.path), title: e.name),
+                    ),
+                  );
+                },
+              ),
+            if (!e.isDirectory)
+              ListTile(
+                leading: const Icon(Icons.lock_outline_rounded),
+                title: const Text('Kasaya taşı'),
+                subtitle: const Text('PIN ile şifrelenir, kasa dışında saklanır'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _addToVault(e);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings_outlined),
+              title: const Text('İzinleri değiştir (chmod)'),
+              subtitle: const Text('Root\'lu cihazlarda dosya izinleri'),
+              onTap: () {
+                Navigator.pop(context);
+                _chmodDialog(e);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Dosyayı kopyalayıp şifreli kasaya ekler (kaynak dosya yerinde kalır).
+  Future<void> _addToVault(FileEntry e) async {
+    if (!VaultService.unlocked) {
+      // Önce kasa ekranı açılır; kullanıcı PIN ile girip döner.
+      final opened = await Navigator.of(context).pushNamed('/vault');
+      if (opened != true || !mounted) return;
+    }
+    if (!mounted || !VaultService.unlocked) return;
+    try {
+      final entry = await VaultService.add(File(e.path));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${entry.name} kasaya eklendi (şifrelendi)')),
+      );
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kasaya eklenemedi: $err')),
+      );
+    }
+  }
+
+  /// Root'lu cihazlarda izin değiştirme diyaloğu; root yoksa bilgilendirir.
+  Future<void> _chmodDialog(FileEntry e) async {
+    final rooted = await RootService.isRooted();
+    if (!mounted) return;
+    if (!rooted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Kök (root) erişimi bulunamadı. chmod yalnızca root\'lu '
+              'cihazlarda çalışır.'),
+        ),
+      );
+      return;
+    }
+    var current = '';
+    try {
+      current = RootService.modeToString(File(e.path).statSync().mode);
+    } catch (_) {}
+    final controller = TextEditingController(text: RootService.parseMode(current) ?? '644');
+    final mode = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('İzinleri değiştir (chmod)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 8),
+            Text('Mevcut: $current'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Yeni izin (sekizlik)',
+                hintText: '644, 755, 0755 …',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Uygula'),
+          ),
+        ],
+      ),
+    );
+    if (mode == null || mode.isEmpty) return;
+    try {
+      final ok = await RootService.chmod(e.path, mode);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'İzinler güncellendi: $mode'
+              : 'chmod başarısız oldu'),
+        ),
+      );
+      if (ok && mounted) _load();
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Hata: $err')),
+      );
+    }
+  }
+
+  /// Çift panel sürükle-bırak: dosya hedef klasöre kopyalanır.
+  Future<void> _copyToFolder(String filePath, String targetFolder) async {
+    if (filePath == targetFolder) return;
+    // Kendi kendine kopyalama engeli.
+    final parent = File(filePath).parent.path;
+    if (parent == targetFolder) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dosya zaten bu klasörde')),
+      );
+      return;
+    }
+    try {
+      await _service.copyPath(filePath, targetFolder);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '${File(filePath).path.split(Platform.pathSeparator).last} '
+              'kopyalandı → $targetFolder'),
+        ),
+      );
+      // Hedef bu ekrandaysa liste tazelenir.
+      if (targetFolder == _path && mounted) _load();
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kopyalanamadı: $err')),
+      );
     }
   }
 
@@ -328,6 +569,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
             Text('Boyut: ${Formats.size(e.size)}'),
             Text(
                 'Değiştirilme: ${Formats.date(e.modified, pattern: datePattern)}'),
+            if (_permissionText(e.path) != null)
+              Text('İzinler: ${_permissionText(e.path)}'),
             const SizedBox(height: 8),
             SelectableText('Konum: ${e.path}'),
           ],
@@ -340,6 +583,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
         ],
       ),
     );
+  }
+
+  /// POSIX izin metni (ör. "-rw-r--r--"); alınamazsa null.
+  static String? _permissionText(String path) {
+    try {
+      final stat = File(path).statSync();
+      return RootService.modeToString(stat.mode);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _pickSort() async {
@@ -539,6 +792,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             ),
                           );
                         },
+                        // Çift panel: listeden ağaç düğümüne sürüklenen dosya
+                        // kopyalanır (X-plore tarzı).
+                        onDrop: _copyToFolder,
                       ),
                     ),
                     const VerticalDivider(width: 1),
@@ -643,7 +899,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         itemBuilder: (context, index) {
           final e = visible[index];
           final selected = _selected.contains(e.path);
-          return ListTile(
+          final tile = ListTile(
             selected: selected,
             selectedTileColor:
                 Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
@@ -664,9 +920,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         ? Theme.of(context).colorScheme.primary
                         : Colors.grey,
                   )
-                : null,
+                : IconButton(
+                    icon: const Icon(Icons.more_vert_rounded, size: 20),
+                    tooltip: 'Daha fazla',
+                    onPressed: () => _rowMenu(e),
+                  ),
             onTap: () => _open(e),
             onLongPress: () => _toggleSelect(e),
+          );
+          // Çift panel (tablet): uzun basıp sürükleyerek sol paneldeki
+          // klasör ağacına kopyalanır; seçiliyken sürüklenemez.
+          if (_selecting) return tile;
+          return LongPressDraggable<String>(
+            data: e.path,
+            feedback: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(e.icon, color: e.color, size: 24),
+                  title: Text(e.name,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ),
+            childWhenDragging:
+                Opacity(opacity: 0.4, child: tile),
+            child: tile,
           );
         },
       ),

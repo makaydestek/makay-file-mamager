@@ -1,3 +1,4 @@
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import 'models/home_category.dart';
 import 'providers/settings_provider.dart';
 import 'screens/browser_screen.dart';
 import 'screens/device_mode_screen.dart';
+import 'screens/duplicate_files_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/media_category_screen.dart';
 import 'screens/permissions_screen.dart';
@@ -19,6 +21,8 @@ import 'screens/remote_screen.dart';
 import 'screens/storage_analysis_screen.dart';
 import 'screens/temp_cleaner_screen.dart';
 import 'screens/tv_home_screen.dart';
+import 'screens/usb_storage_screen.dart';
+import 'screens/vault_screen.dart';
 import 'services/media_service.dart';
 import 'services/platform_service.dart';
 import 'services/update_service.dart';
@@ -97,12 +101,27 @@ class _MakayAppState extends State<MakayApp> {
       _setupDone = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdate());
     }
+    // Material You: Android 12+ dinamik sistem rengi (kullanıcı kapatabilir).
+    if (!settings.dynamicColor) {
+      return _app(settings, null);
+    }
+    return DynamicColorBuilder(
+      // Not: dynamic_color paketi kendi ColorScheme tipini döndürür; tip
+      // çakışmasını önlemek için yalnız seed rengi alınır.
+      builder: (lightDynamic, darkDynamic) => _app(
+        settings,
+        (light: lightDynamic?.primary, dark: darkDynamic?.primary),
+      ),
+    );
+  }
+
+  Widget _app(SettingsProvider settings, ({Color? light, Color? dark})? seed) {
     return MaterialApp(
       title: 'Makay Dosya Yöneticisi',
       debugShowCheckedModeBanner: false,
       navigatorKey: rootNavigatorKey,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(dynamicSeed: seed?.light),
+      darkTheme: AppTheme.dark(dynamicSeed: seed?.dark),
       themeMode: settings.themeMode,
       locale: const Locale('tr'),
       supportedLocales: const [Locale('tr'), Locale('en')],
@@ -217,6 +236,15 @@ Route<dynamic> _onGenerateRoute(RouteSettings settings) {
       screen = const RecentFilesScreen();
     case '/recycle':
       screen = const RecycleBinScreen();
+    case '/usb':
+      // Bağlı USB / SD kart birimleri (OTG algılama).
+      screen = const UsbStorageScreen();
+    case '/vault':
+      // PIN ile korunan şifreli kasa.
+      screen = const VaultScreen();
+    case '/duplicates':
+      // Mükerrer dosya taraması (Geçici Dosyalar ekranından).
+      screen = DuplicateFilesScreen(root: AppPaths.scanRoot);
     default:
       // /browse/internal, /browse/images, ... kategori tarayıcıları (A2/A3).
       if (name.startsWith('/browse/')) {

@@ -29,6 +29,17 @@ void main() {
     expect(find.text('Ana bellek'), findsOneWidget);
     expect(find.text('Resimler'), findsOneWidget);
     expect(find.text('Videolar'), findsOneWidget);
+    expect(find.text('Kasa'), findsOneWidget);
+
+    // Kategori sayısı artınca 'USB / SD' ve 'Ağdan erişim' alt satırlara
+    // taşır; kaydırarak doğrula.
+    await tester.scrollUntilVisible(
+      find.text('Ağdan erişim'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('USB / SD'), findsOneWidget);
     expect(find.text('Ağdan erişim'), findsOneWidget);
   });
 

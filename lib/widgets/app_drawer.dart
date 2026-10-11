@@ -103,6 +103,23 @@ class _AppDrawerState extends State<AppDrawer> {
                   ),
                   const Divider(),
                   _DrawerItem(
+                    icon: Icons.lock_outline_rounded,
+                    title: 'Kasa',
+                    onTap: () => Navigator.of(context).pushNamed('/vault'),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.sd_card_rounded,
+                    title: 'USB / SD Kart',
+                    onTap: () => Navigator.of(context).pushNamed('/usb'),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.copy_all_rounded,
+                    title: 'Mükerrer dosyalar',
+                    onTap: () =>
+                        Navigator.of(context).pushNamed('/duplicates'),
+                  ),
+                  const Divider(),
+                  _DrawerItem(
                     icon: Icons.desktop_windows_rounded,
                     title: 'Uzak',
                     onTap: () => Navigator.of(context).pushNamed('/remote'),

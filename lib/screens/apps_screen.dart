@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -174,8 +175,99 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
                     style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
+          onTap: () => _appActions(app),
         );
       },
+    );
+  }
+
+  /// Uygulama işlemleri: APK yedekleme + sistem ayarları.
+  Future<void> _appActions(InstalledApp app) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Image.memory(app.icon ?? Uint8List(0),
+                  width: 32, height: 32, errorBuilder: (_, _, _) =>
+                      const Icon(Icons.android_rounded)),
+              title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${app.packageName} • ${app.versionName}'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.save_alt_rounded),
+              title: const Text('APK\'yı yedekle'),
+              subtitle: const Text('Kurulum APK\'sını Download klasörüne kopyalar'),
+              enabled: app.sourceDir.isNotEmpty,
+              onTap: () => Navigator.pop(context, 'backup'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: const Text('Uygulama bilgisi'),
+              onTap: () => Navigator.pop(context, 'info'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'backup') _backupApk(app);
+    if (action == 'info') _showAppInfo(app);
+  }
+
+  /// Kurulum APK'sı `Download/<ad>-<sürüm>.apk` olarak kopyalanır.
+  Future<void> _backupApk(InstalledApp app) async {
+    if (app.sourceDir.isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final source = File(app.sourceDir);
+      if (!await source.exists()) throw 'APK kaynağı bulunamadı';
+      final dir = Directory('/storage/emulated/0/Download');
+      await dir.create(recursive: true);
+      final safeName = app.name.replaceAll(RegExp(r'[^\p{L}\p{N} ._-]', unicode: true), '_');
+      final dest =
+          '${dir.path}${Platform.pathSeparator}$safeName-${app.versionName}.apk';
+      await source.copy(dest);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Yedeklendi: $dest')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Yedeklenemedi: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _showAppInfo(InstalledApp app) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(app.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Paket: ${app.packageName}'),
+            Text('Sürüm: ${app.versionName}'),
+            Text('Tür: ${app.isSystem ? 'Dahili (sistem)' : 'Yüklü'}'),
+            Text('Boyut: ${app.size > 0 ? Formats.size(app.size) : 'Bilinmiyor'}'),
+            const SizedBox(height: 8),
+            SelectableText('APK: ${app.sourceDir}'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -76,13 +76,22 @@ class FileService {
     await entity.rename('$parent${Platform.pathSeparator}$newName');
   }
 
-  Future<void> copyEntry(FileEntry entry, String targetDir) async {
-    final target =
-        '$targetDir${Platform.pathSeparator}${entry.name}';
-    if (entry.isDirectory) {
-      await _copyDir(Directory(entry.path), Directory(target));
+  Future<void> copyEntry(FileEntry entry, String targetDir) =>
+      copyPath(entry.path, targetDir, name: entry.name);
+
+  /// Yol tabanlı kopyalama (sürükle-bırak / paneller arası).
+  Future<void> copyPath(
+    String source,
+    String targetDir, {
+    String? name,
+  }) async {
+    final sourceName = source.split(Platform.pathSeparator).last;
+    final target = '$targetDir${Platform.pathSeparator}${name ?? sourceName}';
+    final sourceEntity = Directory(source);
+    if (sourceEntity.existsSync()) {
+      await _copyDir(sourceEntity, Directory(target));
     } else {
-      await File(entry.path).copy(target);
+      await File(source).copy(target);
     }
   }
 

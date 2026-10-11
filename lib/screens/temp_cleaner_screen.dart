@@ -318,6 +318,17 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
                       ? () => _deleteAll(_temps.map((t) => t.file).toList())
                       : null,
                 ),
+                const SizedBox(height: 4),
+                // Mükerrer dosya taraması ayrı ekranda yapılır.
+                ListTile(
+                  leading: const Icon(Icons.copy_all_rounded),
+                  title: const Text('Mükerrer dosyalar'),
+                  subtitle:
+                      const Text('Aynı içeriğe sahip kopyaları bul ve temizle'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () =>
+                      Navigator.of(context).pushNamed('/duplicates'),
+                ),
                 if (_temps.isNotEmpty) ...[
                   const Divider(),
                   Text('Bulunan geçici dosyalar',

@@ -27,22 +27,46 @@ tüm özellikler her kullanıcıya açıktır:
 | İzin onayı | Dosya/medya izinleri kullanıcıdan istenir; onaysız açılmaz |
 | Görünüm stili | Otomatik / Dengeli / Geniş / Sık — dikey-yatay sütun sayısı seçilebilir |
 | Kategori boyutları | Ana ekran kartlarında başlık altında özet boyut (arka planda hesaplanır) |
+| Mükerrer dosyalar | Aynı içeriğe sahip kopyaları bulma, tek kopya bırakıp temizleme |
+| Görsel harita | Bellek analizinde treemap ile kategori alanlarının görselleştirilmesi |
+| Çift panel sürükle-bırak | Tablette listeden klasör ağacına sürükleme ile kopyalama |
+| Metin editörü | Düz metin dosyalarını görüntüleme, düzenleyip kaydetme |
+| Hex görüntüleyici | Dosyaları offset + hex + ASCII olarak bayt bayt görüntüleme |
+| SQLite görüntüleyici | `.db` dosyalarında tablo ve satırları salt okunur görüntüleme |
+| Kasa (gizli klasör) | PIN ile korunan AES-256-GCM şifreli dosya kasası; kasaya taşıma |
+| Dropbox / OneDrive / Box | Tarayıcı OAuth2 (PKCE) ile bağlanma; gezinme, indirme, yükleme |
+| USB / SD kart | Bağlı çıkarılabilir birimleri algılama ve tarayıcıyla açma |
+| APK yedekleme | Yüklü uygulamaların kurulum APK'sını Download klasörüne kopyalama |
+| Material You | Android 12+ sistem (dinamik) rengi; ayarlar'dan kapatılabilir |
+| Kök izinleri (chmod) | Root'lu cihazlarda dosya izinlerini değiştirme; her dosyada izin gösterimi |
 
 ## Ekranlar (referans ekranlardan)
 
 1. **Ana Ekran** — kategori ızgarası: Ana bellek, İndirilenler, Bellek Analizi,
-   Resimler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Bulut, Uzak, Ağdan erişim
+   Resimler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Bulut, Uzak,
+   **Kasa**, **USB / SD**, Ağdan erişim
    (kartların altında özet boyut; görüntü stili ayarlar'dan değiştirilebilir)
-2. **Çekmece (Drawer)** — Ana Ekran, Ana bellek (%), Geri Dönüşüm Kutusu, ağ sunucuları,
+2. **Çekmece (Drawer)** — Ana Ekran, Ana bellek (%), Geri Dönüşüm Kutusu, **Kasa**,
+   **USB / SD Kart**, **Mükerrer dosyalar**, ağ sunucuları,
    hızlı kategoriler (Yeni Dosyalar, Belgeler, Videolar, Ses, Resimler, İndirilenler)
-3. **Dosya Tarayıcı** — breadcrumb, liste/ızgara, sıralama, filtre, arama, dosya işlemleri
-4. **Bellek Analizi** — kullanım yüzdesi, kategori dağılımı, büyük dosyalar, uygulamalar
-5. **Uygulamalar** — İndirilenler / Tümü sekmeleri, APK bilgisi ve paylaşımı
+3. **Dosya Tarayıcı** — breadcrumb, liste/ızgara, sıralama, filtre, arama,
+   dosya işlemleri; satır menüsü (metin/hex/SQLite açma, **kasaya taşıma**,
+   **chmod**); tablette çift panel **sürükle-bırak kopyalama**
+4. **Bellek Analizi** — kullanım yüzdesi, kategori dağılımı, **görsel harita (treemap)**,
+   büyük dosyalar, uygulamalar
+5. **Uygulamalar** — İndirilenler / Tümü / Dahili sekmeleri, APK bilgisi ve paylaşımı,
+   **APK yedekleme**
 6. **Ağdan Erişim** — FTP sunucu başlat (rastgele şifre, gizli dosyaları göster)
-7. **Uzak** — FTP/SMB uzak konum ekleme ve gezinme
-8. **Bulut** — bulut sağlayıcı hesapları ekleme; Google Drive tarayıcı ile bağlanır
+7. **Uzak** — FTP/SMB/SFTP/WebDAV uzak konum ekleme ve gezinme
+8. **Bulut** — bulut sağlayıcı hesapları ekleme; Google Drive, **Dropbox**,
+   **OneDrive**, **Box** tarayıcı OAuth2 ile bağlanır
 9. **Yeni Dosyalar** — son 7 günde değişen dosyalar, satırlarda (Tarih • Boyut)
-10. **Ayarlar** — dosya boyutu birimi, tarih biçimi, **görünüm stili**, gelişmiş ayarlar,
+10. **Geçici Dosyalar** — önbellek/.tmp temizliği + **mükerrer dosya taraması**
+11. **Kasa** — PIN oluşturma/kilit açma, şifreli dosya listesi, dışa aktarma, silme
+12. **USB / SD Kart** — bağlı harici birimlerin listesi ve gezinme
+13. **Metin Editörü / Hex / SQLite** — dosya türüne göre açılan görüntüleyiciler
+14. **Ayarlar** — dosya boyutu birimi, tarih biçimi, **görünüm stili**,
+    **Material You**, **Kasa/USB/Mükerrer** kısayolları, gelişmiş ayarlar,
     geri dönüşüm kutusu ayarları, bildirimler, tema (açık/koyu/sistem), izinler
 
 ## Geliştirme Aşamaları
@@ -63,6 +87,10 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
   ilk açılış sürüm + izin onayı
 - **A19** — geri bildirim serisi: uzak bağlantı kaydı, Google Drive tarayıcı
   bağlanma (OAuth PKCE), kategori boyutları, medya açma, görüntü stili
+- **A20** — popüler dosya yöneticileriyle kıyaslanan boşluklar: mükerrer dosya
+  tespiti, treemap, çift panel sürükle-bırak, metin editörü, hex/SQLite
+  görüntüleyici, chmod, kasa (PIN + AES-256-GCM), Dropbox/OneDrive/Box,
+  USB/SD algılama, APK yedekleme, Material You
 
 ## Otomatik Güncelleme
 

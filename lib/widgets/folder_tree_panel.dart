@@ -13,11 +13,16 @@ class FolderTreePanel extends StatefulWidget {
     required this.rootPath,
     required this.currentPath,
     required this.onSelected,
+    this.onDrop,
   });
 
   final String rootPath;
   final String currentPath;
   final ValueChanged<String> onSelected;
+
+  /// Klasör düğümüne bir dosya sürüklendiğinde (yol, hedef klasör).
+  /// Verilirse ağaç düğümleri sürükleme hedefi olur (çift panel kopyalama).
+  final void Function(String filePath, String targetFolder)? onDrop;
 
   @override
   State<FolderTreePanel> createState() => _FolderTreePanelState();
@@ -139,6 +144,27 @@ class _FolderTreePanelState extends State<FolderTreePanel> {
       ],
     );
 
+    // Sürükle-bırak hedefi: dosya bu klasöre bırakılınca [onDrop] çağrılır.
+    Widget node = label;
+    final onDrop = widget.onDrop;
+    if (onDrop != null) {
+      node = DragTarget<String>(
+        onWillAcceptWithDetails: (details) =>
+            details.data.isNotEmpty && details.data != path,
+        onAcceptWithDetails: (details) => onDrop(details.data, path),
+        builder: (context, candidate, rejected) => AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: candidate.isNotEmpty
+                ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: label,
+        ),
+      );
+    }
+
     if (kids == null || kids.isEmpty) {
       // Yaprak: tıklanabilir düğüm.
       return InkWell(
@@ -148,7 +174,7 @@ class _FolderTreePanelState extends State<FolderTreePanel> {
         },
         child: Padding(
           padding: const EdgeInsets.only(left: 12),
-          child: SizedBox(height: 36, child: label),
+          child: SizedBox(height: 36, child: node),
         ),
       );
     }
@@ -162,7 +188,7 @@ class _FolderTreePanelState extends State<FolderTreePanel> {
       onExpansionChanged: (open) {
         if (open) _ensureLoaded(path);
       },
-      title: GestureDetector(onTap: () => widget.onSelected(path), child: label),
+      title: GestureDetector(onTap: () => widget.onSelected(path), child: node),
       children: [
         for (final kid in kids)
           _node(theme, kid.path, kid.name),

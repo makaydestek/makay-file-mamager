@@ -99,6 +99,20 @@ const List<HomeCategory> kHomeCategories = [
     route: '/remote',
   ),
   HomeCategory(
+    id: 'vault',
+    title: 'Kasa',
+    icon: Icons.lock_outline_rounded,
+    color: Color(0xFF37474F),
+    route: '/vault',
+  ),
+  HomeCategory(
+    id: 'usb',
+    title: 'USB / SD',
+    icon: Icons.sd_card_rounded,
+    color: Color(0xFF0277BD),
+    route: '/usb',
+  ),
+  HomeCategory(
     id: 'network',
     title: 'Ağdan erişim',
     icon: Icons.devices_rounded,

@@ -6,6 +6,12 @@ import 'package:path_provider/path_provider.dart';
 class AppPaths {
   AppPaths._();
 
+  /// Tarama kökü (mükerrer dosya / yeni dosyalar için); senkron, platforma göre.
+  static String get scanRoot {
+    if (Platform.isAndroid) return '/storage/emulated/0';
+    return Platform.environment['USERPROFILE'] ?? Directory.systemTemp.path;
+  }
+
   /// Ana depolama kökü; erişilemezse null (örn. web).
   static Future<String?> internalRoot() async {
     if (Platform.isAndroid) return '/storage/emulated/0';

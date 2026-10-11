@@ -1,5 +1,5 @@
-name: makay_file_manager
-description: "Makay Dosya Yöneticisi - Mobil/Tablet/TV için dosya yöneticisi."
+﻿name: makay_file_manager
+description: "Makay Dosya YÃ¶neticisi - Mobil/Tablet/TV iÃ§in dosya yÃ¶neticisi."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -49,6 +49,9 @@ dependencies:
   crypto: ^3.0.3
   package_info_plus: ^10.2.2
   url_launcher: ^6.3.1
+  dynamic_color: ^2.1.0
+  sqlite3: ^2.4.0
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   flutter_test:

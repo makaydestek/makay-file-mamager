@@ -11,6 +11,7 @@ class InstalledApp {
     required this.versionName,
     required this.isSystem,
     required this.size,
+    required this.sourceDir,
     required this.icon,
   });
 
@@ -21,6 +22,9 @@ class InstalledApp {
 
   /// Boyut bayt; alınamazsa -1.
   final int size;
+
+  /// Kurulum APK'sının yolu (yedekleme için); alınamazsa boş.
+  final String sourceDir;
 
   /// PNG ikon baytları; alınamazsa null.
   final Uint8List? icon;
@@ -33,11 +37,49 @@ class InstalledApp {
       versionName: (map['versionName'] as String?) ?? '',
       isSystem: (map['isSystem'] as bool?) ?? false,
       size: (map['size'] as num?)?.toInt() ?? -1,
+      sourceDir: (map['sourceDir'] as String?) ?? '',
       icon: iconData is Uint8List
           ? iconData
           : (iconData is List ? Uint8List.fromList(iconData.cast<int>()) : null),
     );
   }
+}
+
+/// Bağlı depolama birimi (USB OTG / SD kart).
+class StorageVolumeInfo {
+  StorageVolumeInfo({
+    required this.description,
+    required this.isRemovable,
+    required this.isEmulated,
+    required this.path,
+    required this.isMounted,
+    this.state = '',
+  });
+
+  final String description;
+  final bool isRemovable;
+
+  /// Dahili (emüle edilmiş) birim mi — harici listesinden çıkarılır.
+  final bool isEmulated;
+
+  /// Erişim yolu; alınamazsa boş (ör. Android 11+ kısıtları).
+  final String path;
+
+  /// Birim "mounted" durumunda mı (kullanılabilir).
+  final bool isMounted;
+
+  /// Ham durum metni (ör. "mounted", "ejected").
+  final String state;
+
+  factory StorageVolumeInfo.fromMap(Map<Object?, Object?> map) =>
+      StorageVolumeInfo(
+        description: (map['description'] as String?) ?? '',
+        isRemovable: (map['isRemovable'] as bool?) ?? false,
+        isEmulated: (map['isEmulated'] as bool?) ?? false,
+        path: (map['path'] as String?) ?? '',
+        isMounted: (map['state'] as String?) == 'mounted',
+        state: (map['state'] as String?) ?? '',
+      );
 }
 
 /// Android platform kanalı sarmalayıcısı (StatFs, uygulama listesi).
@@ -110,4 +152,19 @@ class PlatformService {
     }
   }
 
+  /// Bağlı depolama birimleri (USB OTG / SD kart / dahili).
+  static Future<List<StorageVolumeInfo>> storageVolumes() async {
+    if (!supported) return const [];
+    try {
+      final list = await _channel.invokeListMethod<Map<Object?, Object?>>(
+          'getStorageVolumes');
+      return (list ?? const [])
+          .map(StorageVolumeInfo.fromMap)
+          .toList(growable: false);
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
 }

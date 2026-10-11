@@ -309,6 +309,70 @@ kategori boyutları, medya açma ve görüntü stili.
       `recent_files_screen_test`, `google_drive_service_test`,
       `view_style_test`; analiz temiz, testler 61/61
 
+### A20 — Popüler Dosya Yöneticileriyle Kıyaslama Boşlukları (Sürüm 1.0.10) ✅
+Cx File Explorer / X-plore / Samsung Dosya Yöneticisi / F-Files ile kıyaslanıp
+eksik bulunan "ayırt edici" özelliklerin tamamı, öncelik sırasına göre eklendi.
+
+**Temizleyici & analiz**
+- [x] **Mükerrer dosya tespiti**: `DuplicateService` — izolatta boyut
+      gruplaması + 64 KB parça MD5 (aynı boyut–farklı içerik ayrışır), gizli
+      dosyalar ve `Android/` atlanır; `DuplicateFilesScreen` grup kartları,
+      "TEMİZLE" (her gruptan bir kopya korunur), kazanılan alan özeti ve
+      SnackBar; Geçici Dosyalar, Ayarlar ve çekmece'den erişilir
+- [x] **Görsel depolama haritası (treemap)**: `TreemapView` — Squarified
+      algoritması (Bruls vd.), kare orana en yakın dikdörtgenler, kategori
+      renkleri, etikette ad + boyut; Bellek Analizi ekranına "Görsel harita"
+      bölümü olarak eklendi
+
+**Tarayıcı & dosya işlemleri**
+- [x] **Çift panel sürükle-bırak**: satırlar `LongPressDraggable`, tablet
+      klasör ağacı düğümleri `DragTarget` → üzerine bırakınca kopyalama
+      (`FileService.copyPath`); hedef klasör ekrandaysa liste tazelenir
+- [x] **Metin editörü**: düz metin uzantıları `TextEditorScreen`'de açılır;
+      düzenleme + kaydetme, kaydedilmemiş değişiklik onayı, 1 MB üstünde
+      salt-okunur uyarı bandı, görünüm 120 KB'da kırpılır (performans)
+- [x] **Hex görüntüleyici**: 16 bayt/satır (offset + hex + ASCII), sanal
+      liste, bayt ve Future önbellekleri (sonsuz rebuild döngüsü önlendi)
+- [x] **SQLite görüntüleyici**: `.db/.sqlite` dosyalarında tablo listesi +
+      ilk 500 satır (salt okunur); Android'de sistem `libsqlite.so` bağlanır
+      (ekstra native paket yükü yok), tablo adı kaçışı yapılır
+- [x] **İzinler (chmod)**: bilgi diyaloğunda POSIX izin metni; satır
+      menüsünde "İzinleri değiştir (chmod)" — `RootService` `su -c id` ile
+      root'u doğrular, root yoksa anlaşılır mesaj; mod girdisi sekizlik
+      olarak doğrulanır ve yol tırnak kaçışı yapılır
+
+**Kasa (gizli klasör)**
+- [x] `VaultService` — PIN'den **PBKDF2-HMAC-SHA256** (20.000 tur) ile anahtar,
+      **AES-256-GCM** dosya şifreleme (12 bayt nonce + 16 bayt etiket); meta
+      SharedPreferences'ta, dosyalar uygulama özel dizininde `.enc`
+- [x] `VaultScreen` — PIN oluşturma / kilit açma / açık kasa listesi,
+      dışa aktarma (Download/Kasa), onaylı silme, PIN değiştirme ve sıfırlama
+- [x] Tarayıcı satır menüsünde **"Kasaya taşı"** (kaynak dosya yerinde kalır,
+      kopya şifrelenip kasaya alınır); kilitliyse önce kasa ekranı açılır
+
+**Bulut sağlayıcıları**
+- [x] **Dropbox / OneDrive / Box** gerçek bağlantısı: tarayıcı OAuth2 + PKCE
+      (mevcut `OAuthService` akışının yeniden kullanımı); ücretsiz developer
+      hesabı → uygulama → client ID uygulamaya yapıştırılır
+- [x] Servislerde liste/indir/yükle/klasör oluşturma/silme/hakkında, proaktif
+      ve 401/403'te tetiklenen jeton yenileme (olmazsa bağlantı kesme),
+      sağlayıcı bazlı Türkçe hata çevirisi; ortak `CloudOAuthBrowseScreen`
+      gezinme ekranı; Google Drive davranışı aynen korundu
+
+**Cihaz & sistem**
+- [x] **USB OTG / SD kart algılama**: Kotlin kanalında `getStorageVolumes`
+      (`StorageManager`: açıklama, çıkarılabilir, emüle, durum, yol);
+      `UsbStorageScreen` mounted birimleri listeler ve tarayıcıyla açar
+- [x] **APK yedekleme**: uygulama satırı → "APK'yı yedekle" (kaynak yol
+      `sourceDir` ile uygulamadan alınır) → `Download/<ad>-<sürüm>.apk`
+- [x] **Material You**: Android 12+ dinamik sistem rengi (`dynamic_color`);
+      Ayarlar'dan kapatılabilir, kapatılınca turkuaz tohum rengine döner
+
+**Testler**: `duplicate_service_test`, `duplicate_files_screen_test`,
+`treemap_view_test`, `vault_service_test`, `vault_screen_test`,
+`cloud_providers_test` (ağsız), `root_service_test`, `viewer_screens_test`;
+`widget_test` kaydırmalı doğrulamaya geçirildi. Analiz temiz, testler **110/110**.
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.
