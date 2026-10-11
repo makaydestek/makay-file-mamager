@@ -46,5 +46,16 @@ jobs:
       - name: Statik analiz
         run: flutter analyze
 
+      # `--concurrency=1`: test dosyaları **seri** koşar.
+      #
+      # Gerekçe: sunucu testleri (FTP/SMB) gerçek TCP portu kullanır. Test
+      # dosyaları paralel koştuğunda bir dosyanın "boş bulup kapattığı" port,
+      # diğer dosyanın dinleyicisi tarafından tahsis edilebiliyordu — bu
+      # depoda FTPS dinleyicisine yanlış istemci bağlanıp `Broken pipe`
+      # üretiyor ve FTP testini düşürüyordu. Portlar artık işletim
+      # sistemi tarafından tahsis edilse de (port 0) ve "kapalı port"
+      # testleri 127.0.0.2 üzerinden dönsede, seri çalıştırmak bu sınıfın
+      # tamamını bir daha imkânsız kılar. Test süresi birkaç dakika uzar;
+      # kararlılık hızdan önce gelir.
       - name: Testler
-        run: flutter test --reporter expanded
+        run: flutter test --reporter expanded --concurrency=1
