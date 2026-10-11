@@ -522,18 +522,17 @@ class _FtpSession {
   /// [ServerSocket.port] üzerinden duyurulur. Böylece PASV asla "adres
   /// kullanımda" ile düşmez.
   Future<ServerSocket> _bindDataServer() async {
+    // Aynı arayüz: veri soketi de sunucunun dinlediği arayüze bağlanır.
+    final bind = server._bind;
     const maxCandidates = 8;
     for (var attempt = 0; attempt < maxCandidates; attempt++) {
       try {
-        return await ServerSocket.bind(
-          _bind,
-          server.pickDataPort(),
-        );
+        return await ServerSocket.bind(bind, server.pickDataPort());
       } on SocketException {
         // Bu port dolu — sıradaki adaya geç.
       }
     }
-    return ServerSocket.bind(_bind, 0);
+    return ServerSocket.bind(bind, 0);
   }
 
   Future<void> _cleanupTransfer() async {
