@@ -59,3 +59,9 @@ APK/
 
 # Widget Preview related
 .widget_preview/
+
+# --- E2E (integration_test) bilinçli olarak KALDIRILDI ---
+# Kullanıcı kararı: uçtan uca test katmanı bu projede YOK ve bir daha
+# eklenmeyecek. Bu klasör buraya eklenirse git'e girmez; ayrıca CI'daki
+# "E2E kapalı kalmalı" adımı varlığını tespit edip KIRMIZI olur.
+integration_test/

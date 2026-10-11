@@ -6,9 +6,8 @@
 > koşulur; sonuçlar sürüm notu yerine bu dosyaya işaretlenir.
 >
 > Otomatik kapsam: `flutter analyze` + `flutter test` (CI tarafından her
-> push/PR'da koşulur) **ve** uçtan uca test paketi (bkz. aşağıdaki *Bölüm 0*,
-> bir cihaz/emülatör bağlıyken çalıştırılır). Bu dosya: **yalnızca
-> otomasyonun kapsayamadığı durumlar**.
+> push/PR'da koşulur). Bu dosya: **yalnızca otomasyonun kapsayamadığı
+> durumlar**.
 
 ## Test cihazları
 
@@ -21,36 +20,6 @@
 | **C5** | Android TV / TV kutusu | 12+ | D-pad odak, leanback, TV kanalı |
 
 Her satır: **C1 · C2 · C3 · C4 · C5** — uygun değilse `—` işaretlenir.
-
----
-
-## 0. Otomatik uçtan uca test (E2E)
-
-`integration_test/app_journey_test.dart` **gerçek uygulamayı** (`app.main()`)
-bir Android cihazda/emülatörde açar ve gerçek kullanıcı yolculuğunu sürer:
-ilk açılış (sürüm seçimi → izinler) → ana ekran → taşma menüsü → **Ayarlar** →
-geri → çekmece → **Kasa**.
-
-```sh
-# Cihaz veya emülatör bağlıyken:
-flutter test integration_test -d <cihaz> --dart-define=MAKAY_SKIP_UPDATE_CHECK=true
-```
-
-`MAKAY_SKIP_UPDATE_CHECK` **zorunludur**: test derlemesinin sürümü GitHub'daki
-en son sürümden yenidir; sorgu çalışırsa "Güncelleme bulundu" diyaloğu
-açılabilir ve gezinme adımlarını bloklar.
-
-Önemli notlar:
-
-- `flutter test` bu klasörü **çalıştırmaz** — ayrı bir `integration_test/`
-  klasörü olduğu için. `flutter test` yalnızca `test/` altındaki birim/widget
-  testlerini koşar; E2E için **fiziksel cihaz veya emülatör** gerekir.
-- Testler **sırayla** çalıştırılmalıdır: ilk test cihaz ayarlarını temizleyip
-  gerçek ilk açılışı sınar, sonraki iki test aynı oturumda ayarların kalıcı
-  olduğunu ve gezinmenin çalıştığını doğrular.
-- Doğrulanmış çalışma ortamı: Android 11 (API 30), x86_64 emülatör.
-- E2E, CI'ya eklenmemiştir: CI koşusu hızını ve kararlılığını korumak için
-  sürüm öncesi **manuel** bir kapı olarak bırakılmıştır.
 
 ---
 

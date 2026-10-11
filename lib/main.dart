@@ -55,14 +55,6 @@ class _MakayAppState extends State<MakayApp> {
   /// Uygulama yaşam döngüsünde yalnızca bir kez sorgulanır.
   static bool _updateChecked = false;
 
-  /// Uçtan uca testte güncelleme sorgusu atlanır (`--dart-define`).
-  ///
-  /// Gerekçe: test derlemesinin sürümü, GitHub'daki en son sürümden her zaman
-  /// yenidir; sorgu çalışırsa "Güncelleme bulundu" diyaloğu açılır ve testin
-  /// gezinme adımlarını bloklar. Test bu sayede ağa bağımlı olmadan çalışır.
-  static const bool _skipUpdateCheck =
-      bool.fromEnvironment('MAKAY_SKIP_UPDATE_CHECK');
-
   /// Sürüm seçimi + izin onayı yeni tamamlandı mı?
   bool _setupDone = false;
 
@@ -81,7 +73,6 @@ class _MakayAppState extends State<MakayApp> {
   }
 
   Future<void> _checkUpdate() async {
-    if (_skipUpdateCheck) return;
     if (_updateChecked) return;
     if (!mounted) return;
     // Sürüm seçimi / izin onayı bitmeden güncelleme sorma.

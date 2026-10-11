@@ -42,6 +42,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      # --- GUARD: E2E (integration_test) bilinçli olarak KALDIRILDI ---
+      #
+      # Kullanıcı kararı: uçtan uca test katmanı bu projede YOK ve bir daha
+      # eklenmeyecek. Yayın, eklendiği takdirde BAŞLAMAZ bile (derlemeden
+      # önce durur) — böylece yasak bir yapı yayınlanmış bir artefakte
+      # sızmış olmaz.
+      - name: E2E kapalı kalmalı
+        run: |
+          set -euo pipefail
+          fail=0
+          if [ -d integration_test ]; then
+            echo "::error file=integration_test::integration_test/ klasörü eklendi. E2E bu projede bilinçli olarak kaldırıldı (kullanıcı kararı) ve yeniden eklenmemeli."
+            fail=1
+          fi
+          if [ -f pubspec.yaml ] && grep -qE '^[[:space:]]*integration_test:' pubspec.yaml; then
+            echo "::error file=pubspec.yaml::pubspec.yaml içinde integration_test bağımlılığı var. E2E bu projede bilinçli olarak kaldırıldı (kullanıcı kararı) ve yeniden eklenmemeli."
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "Kaldırılacaklar: integration_test/ klasörü ve pubspec.yaml dev_dependencies altındaki integration_test satırı."
+            exit 1
+          fi
+          echo "E2E kapalı - doğrulandı (klasör yok, bağımlılık yok)."
+
       - name: Flutter kur
         uses: subosito/flutter-action@v2
         with:
