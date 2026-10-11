@@ -47,12 +47,16 @@ class MiniSmbServer {
     _control = control;
     _log.add('SMB2 sunucusu başladı: port ${control.port}, paylaşım: '
         '\\\\$shareName');
-    // onError şart: dinleyici düzeyinde gelen bir soket hatası abone tarafından
-    // ele alınmazsa bölge dışına taşar ve beklenmedik çöküşe yol açar.
-    control.listen(
-      (socket) => unawaited(_handleClient(socket)),
-      onError: (Object e) => _log.add('SMB dinleyici hatası: $e'),
-    );
+    // Dinleyici düzeyindeki soket hataları asla süreci sonlandırmamalı:
+    // onError'a ulaşmayan geç hatalar bölgeye düşer ve burada yutulur.
+    runZonedGuarded<void>(() {
+      control.listen(
+        (socket) => unawaited(_handleClient(socket)),
+        onError: (Object e) => _log.add('SMB dinleyici hatası: $e'),
+      );
+    }, (Object e, StackTrace s) {
+      _log.add('SMB dinleyici hatası (yutuldu): $e');
+    });
   }
 
   Future<void> stop() async {

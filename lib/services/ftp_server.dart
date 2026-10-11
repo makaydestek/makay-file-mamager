@@ -72,27 +72,45 @@ class MiniFtpServer {
   /// Sunucu günlüğü (ekranda gösterilir).
   Stream<String> get log => _log.stream;
 
+  /// [body] içinde kurulan dinleyicilerden gelen, `onError`'a ulaşmayan geç
+  /// soket hatalarını yutar ve günlüğe yazar.
+  ///
+  /// Gerekçe (CI'da gözlemlendi): Linux'ta `ServerSocket.listen` sonrasında
+  /// gelen bazı hatalar (örn. geçici `Broken pipe`) abonenin `onError`
+  /// geri çağrısına değil, **çağrının kurulduğu bölgeye** (zone) düşer.
+  /// Bölge korumasızsa bu hata süreci — burada testi — beklenmedik biçimde
+  /// düşürür. Dinleyici düzeyindeki bir soket hatası hiçbir zaman süreci
+  /// sonlandırmamalı; günlüğe yazılır.
+  void _guardListener(void Function() body) {
+    runZonedGuarded<void>(body, (Object e, StackTrace s) {
+      _log.add('Dinleyici hatası (yutuldu): $e');
+    });
+  }
+
   Future<void> start() async {
     if (running) return;
+    // Bağlama hataları bilinçli olarak dışarı bırakılır: sunucu
+    // "başlatılamadı" ise çağıran bunu bilmeli.
     final control = await ServerSocket.bind(_bind, port);
     _control = control;
     _log.add('FTP sunucusu başladı: port ${control.port}');
-    // onError şart: dinleyici düzeyinde gelen bir soket hatası (örn. geçici
-    // EPIPE) onError yoksa aboneye hiç ulaşmaz ve bölge dışına taşar; bu da
-    // beklenmedik biçimde çöküşe yol açar. Burada günlüğe yazılır.
-    control.listen(
-      (socket) => unawaited(_handleClient(socket)),
-      onError: (Object e) => _log.add('FTP dinleyici hatası: $e'),
-    );
+    _guardListener(() {
+      control.listen(
+        (socket) => unawaited(_handleClient(socket)),
+        onError: (Object e) => _log.add('FTP dinleyici hatası: $e'),
+      );
+    });
     if (enableTls) {
       try {
         final tls = await ServerSocket.bind(_bind, tlsPort);
         _tlsControl = tls;
         _log.add('FTPS sunucusu başladı: port ${tls.port} (şifreli)');
-        tls.listen(
-          (socket) => unawaited(_handleTlsClient(socket)),
-          onError: (Object e) => _log.add('FTPS dinleyici hatası: $e'),
-        );
+        _guardListener(() {
+          tls.listen(
+            (socket) => unawaited(_handleTlsClient(socket)),
+            onError: (Object e) => _log.add('FTPS dinleyici hatası: $e'),
+          );
+        });
       } catch (e) {
         _log.add('FTPS başlatılamadı: $e');
       }
