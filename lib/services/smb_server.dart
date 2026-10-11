@@ -32,6 +32,12 @@ class MiniSmbServer {
   final _log = StreamController<String>.broadcast();
   final _random = Random.secure();
 
+  /// Sunucunun gerçekten dinlendiği port.
+  ///
+  /// Yapıcıya `0` verilirse işletim sistemi boş bir port tahsis eder; test
+  /// "boş port bul → kapat → bağlan" yarışını tamamen ortadan kaldırır.
+  int get boundPort => _control?.port ?? port;
+
   /// Sunucu günlüğü (ekranda gösterilir).
   Stream<String> get log => _log.stream;
 
@@ -39,10 +45,14 @@ class MiniSmbServer {
     if (running) return;
     final control = await ServerSocket.bind(InternetAddress.anyIPv4, port);
     _control = control;
-    _log.add('SMB2 sunucusu başladı: port $port, paylaşım: \\\\$shareName');
-    control.listen((socket) {
-      unawaited(_handleClient(socket));
-    });
+    _log.add('SMB2 sunucusu başladı: port ${control.port}, paylaşım: '
+        '\\\\$shareName');
+    // onError şart: dinleyici düzeyinde gelen bir soket hatası abone tarafından
+    // ele alınmazsa bölge dışına taşar ve beklenmedik çöküşe yol açar.
+    control.listen(
+      (socket) => unawaited(_handleClient(socket)),
+      onError: (Object e) => _log.add('SMB dinleyici hatası: $e'),
+    );
   }
 
   Future<void> stop() async {

@@ -30,26 +30,27 @@ void main() {
     File('${ftpRoot.path}${Platform.pathSeparator}ornek.txt')
         .writeAsStringSync('merhaba makay');
     Directory('${ftpRoot.path}${Platform.pathSeparator}klasor').createSync();
-    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    ftpPort = probe.port;
-    await probe.close();
+    // Port **0**: işletim sistemi gerçekten boş bir port tahsis eder ve gerçek
+    // değer `boundPort`'tan okunur. "Boş port bul → soketi kapat → hemen
+    // bağlan" yaklaşımı yarışa açıktır (TOCTOU) ve test dosyaları paralel
+    // koştuğu için başka bir dosya tam o portu alabilir.
     ftpServer = MiniFtpServer(
       rootPath: ftpRoot.path,
-      port: ftpPort,
+      port: 0,
       enableTls: false,
       username: 'makay',
       password: 'sifre123',
     );
     await ftpServer.start();
+    ftpPort = ftpServer.boundPort;
 
     smbRoot = Directory.systemTemp.createTempSync('remote_e2e_smb_');
     File('${smbRoot.path}${Platform.pathSeparator}paylasilan.txt')
         .writeAsStringSync('smb içerik');
-    final probe2 = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    smbPort = probe2.port;
-    await probe2.close();
-    smbServer = MiniSmbServer(rootPath: smbRoot.path, port: smbPort);
+    // Port **0** — bkz. yukarıdaki FTP açıklaması.
+    smbServer = MiniSmbServer(rootPath: smbRoot.path, port: 0);
     await smbServer.start();
+    smbPort = smbServer.boundPort;
   });
 
   setUp(() {

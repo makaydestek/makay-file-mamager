@@ -103,29 +103,14 @@ void main() {
             '${root.path}${Platform.pathSeparator}klasor${Platform.pathSeparator}ic.txt')
         .writeAsStringSync('icerik');
 
-    // Port seçimi yarışa açıktır: sunucu `anyIPv4`'e bağlandığı için port da
-    // `anyIPv4` arayüzünde aranır — loopback'te boş olan bir port başka bir
-    // arayüzde dolu olabilir ve "Address already in use" verir. Yeni portlarla
-    // birkaç deneme yapılır.
-    Object? lastError;
-    for (var attempt = 0; attempt < 6; attempt++) {
-      final probe = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
-      port = probe.port;
-      await probe.close();
-
-      server =
-          MiniSmbServer(rootPath: root.path, port: port, shareName: 'makay');
-      try {
-        await server.start();
-        lastError = null;
-        break;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (lastError != null) {
-      throw StateError('SMB sunucusu başlatılamadı: $lastError');
-    }
+    // Port **0**: işletim sistemi gerçekten boş bir port tahsis eder. "Boş port
+    // bul → kapat → hemen bağlan" yaklaşımı yarışa açıktı (TOCTOU) ve test
+    // dosyaları paralel koştuğu için başka bir dosya tam o portu alabilirdi.
+    server =
+        MiniSmbServer(rootPath: root.path, port: 0, shareName: 'makay');
+    await server.start();
+    port = server.boundPort;
+    expect(server.running, isTrue, reason: 'SMB sunucusu dinlemiyor');
   });
 
   tearDownAll(() async {
