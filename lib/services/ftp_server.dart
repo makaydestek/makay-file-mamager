@@ -222,9 +222,13 @@ class _FtpSession {
         _reply('200 TYPE $arg kabul edildi');
       case 'PASV':
         await _cleanupTransfer();
-        final dataPort = server.pickDataPort();
-        dataServer =
-            await ServerSocket.bind(InternetAddress.anyIPv4, dataPort);
+        // PASV veri portu tahmin edilemez: seçilen port başka bir süreç
+        // tarafından tutulmuş olabilir (özellikle CI/paralel testlerde).
+        // Bu yüzden birkaç aday denenir; hiçbiri boş değilse işletim
+        // sistemi tahsis eder (port 0) ve **gerçekten dinlenen port**
+        // duyurulur.
+        dataServer = await _bindDataServer();
+        final dataPort = dataServer!.port;
         // İstemci sunucuya loopback'ten bağlanıyorsa PASV da loopback
         // sunar; aksi halde aynı cihazdaki veri bağlantısı yerel ağ
         // arayüzüne gidip güvenlik duvarına takılabilir.
@@ -480,6 +484,28 @@ class _FtpSession {
   Future<void> _closeDataServer() async {
     await dataServer?.close();
     dataServer = null;
+  }
+
+  /// PASV veri soketini bağlar.
+  ///
+  /// Aday portlar [MiniFtpServer.pickDataPort] ile sırayla denenir; dolu
+  /// olanlar `SocketException` ile elenir. Hiçbiri boş değilse port `0`
+  /// istenir — işletim sistemi boş bir port tahsis eder ve dinlenen port
+  /// [ServerSocket.port] üzerinden duyurulur. Böylece PASV asla "adres
+  /// kullanımda" ile düşmez.
+  Future<ServerSocket> _bindDataServer() async {
+    const maxCandidates = 8;
+    for (var attempt = 0; attempt < maxCandidates; attempt++) {
+      try {
+        return await ServerSocket.bind(
+          InternetAddress.anyIPv4,
+          server.pickDataPort(),
+        );
+      } on SocketException {
+        // Bu port dolu — sıradaki adaya geç.
+      }
+    }
+    return ServerSocket.bind(InternetAddress.anyIPv4, 0);
   }
 
   Future<void> _cleanupTransfer() async {

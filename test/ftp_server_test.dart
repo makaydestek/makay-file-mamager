@@ -14,32 +14,53 @@ void main() {
   late int ftpsPort;
 
   setUpAll(() async {
-    // Boş bir port seç.
-    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    port = probe.port;
-    await probe.close();
-    // TLS portu için de ayrı bir port seç (65535 taşmasını önler).
-    final probeTls =
-        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final tlsPort = probeTls.port;
-    await probeTls.close();
-
     // Geçici kök dizin + örnek dosya.
     root = Directory.systemTemp.createTempSync('makay_ftp_root_');
     File('${root.path}${Platform.pathSeparator}hello.txt')
         .writeAsStringSync('merhaba makay');
-    Directory('${root.path}${Platform.pathSeparator}klasor')
-        .createSync();
+    Directory('${root.path}${Platform.pathSeparator}klasor').createSync();
 
-    server = MiniFtpServer(
-      rootPath: root.path,
-      port: port,
-      tlsPort: tlsPort, // testte çakışmayı önler
-      username: 'android',
-      password: 'sifre123',
-    );
-    await server.start();
-    ftpsPort = tlsPort;
+    // Port seçimi yarışa açıktır ve bu test CI'da flaky idi. İki hata vardı:
+    //
+    //  1. Port arayüzü uyuşmazlığı: port `loopbackIPv4` üzerinde aranıp
+    //     sunucu `anyIPv4`'e bağlanıyordu — loopback'te boş olan bir port
+    //     başka bir arayüzde dolu olabiliyor ("Address already in use").
+    //  2. Aynı port iki kez seçilebiliyordu: TLS portu, kontrol portunun
+    //     soketi kapatıldıktan sonra aranıyordu; işletim sistemi az önce
+    //     boşalan portu geri verebiliyordu.
+    //
+    // Çözüm: iki port da soketler **açıkken** (aynı anda) aranır, böylece
+    // birbirinden ayrışırlar; ayrıca her ikisi de sunucunun bağlandığı
+    // `anyIPv4` arayüzünde aranır ve başlangıç birkaç portla tekrar denenir.
+    Object? lastError;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      final probe = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
+      final probeTls = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
+      port = probe.port;
+      final tlsPort = probeTls.port;
+      await probe.close();
+      await probeTls.close();
+
+      server = MiniFtpServer(
+        rootPath: root.path,
+        port: port,
+        tlsPort: tlsPort,
+        username: 'android',
+        password: 'sifre123',
+      );
+      try {
+        await server.start();
+        ftpsPort = tlsPort;
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        // Portlar bu aralıkta başkasınca alındı; yeni portlarla tekrar dene.
+      }
+    }
+    if (lastError != null) {
+      throw StateError('FTP sunucusu başlatılamadı: $lastError');
+    }
   });
 
   tearDownAll(() async {
