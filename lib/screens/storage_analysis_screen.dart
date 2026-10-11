@@ -4,6 +4,7 @@ import '../models/file_entry.dart';
 import '../services/analysis_service.dart';
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
+import '../utils/text_utils.dart';
 import '../widgets/treemap_view.dart';
 import 'apps_screen.dart';
 import 'large_files_screen.dart';
@@ -364,8 +365,4 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
       ),
     );
   }
-}
-
-extension on String {
-  String ifEmpty(String fallback) => isEmpty ? fallback : this;
 }

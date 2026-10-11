@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import 'platform_service.dart';
 import 'remote_service.dart';
@@ -86,11 +87,15 @@ class CategorySizeService {
     try {
       final clouds = await CloudLocationStore.load();
       if (clouds.isNotEmpty) out['cloud'] = '${clouds.length} hesap';
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('kategori: bulut hesapları', e);
+    }
     try {
       final remotes = await RemoteLocationStore.load();
       if (remotes.isNotEmpty) out['remote'] = '${remotes.length} bağlantı';
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('kategori: uzak bağlantılar', e);
+    }
 
     return out;
   }
@@ -157,12 +162,16 @@ class CategorySizeService {
         if (e is File) {
           try {
             total += e.lengthSync();
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('kategori boyutu: dosya boyutu', e);
+          }
         } else if (e is Directory) {
           total += dirSize(e.path);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('kategori boyutu: yürüyüş', e);
+    }
     return total;
   }
 
@@ -198,7 +207,9 @@ class CategorySizeService {
           try {
             final stat = e.statSync();
             if (stat.modified.isAfter(cutoff)) total += stat.size;
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('kategori boyutu: son 7 gün', e);
+          }
         }
       }
     }
@@ -249,7 +260,10 @@ class CategorySizeService {
           'values': values,
         }),
       );
-    } catch (_) {}
+    } catch (_) {
+      // Önbellek yazılamazsa bir sonraki açılışta yeniden hesaplanır;
+      // taze sonuç zaten labels'a yazılmıştı, kullanıcı hiçbir şey fark etmez.
+    }
   }
 }
 

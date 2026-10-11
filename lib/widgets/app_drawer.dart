@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/category_size_service.dart';
 import '../services/recycle_bin_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 
 /// Referans uygulamadaki yan çekmece (drawer) menüsü.
@@ -27,7 +28,9 @@ class _AppDrawerState extends State<AppDrawer> {
       await RecycleBinService.instance.load();
       final total = RecycleBinService.instance.totalSize;
       if (mounted) setState(() => _recycleSize = total);
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('çekmece: geri dönüşüm boyutu', e);
+    }
   }
 
   @override

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../utils/debug_log.dart';
 import 'cloud/cloud_oauth_flow.dart';
 import 'cloud/cloud_types.dart';
 import 'oauth_service.dart';
@@ -239,7 +240,9 @@ class DropboxService {
       final error = map['error'];
       detail =
           '${map['error_summary'] ?? (error is Map<String, Object?> ? error['.tag'] ?? body : error ?? body)}';
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('dropbox: hata gövdesi ayrıştırma', e);
+    }
     if (status == 401 || status == 403) {
       return 'Oturum süresi doldu veya erişim reddedildi — tekrar bağlanın';
     }

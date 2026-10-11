@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/file_entry.dart';
 import '../services/analysis_service.dart';
 import '../utils/formats.dart';
+import '../utils/text_utils.dart';
 
 /// Büyük dosyaların tam listesi ("DAHA FAZLA" ekranı).
 class LargeFilesScreen extends StatefulWidget {
@@ -64,8 +65,4 @@ class _LargeFilesScreenState extends State<LargeFilesScreen> {
                 ),
     );
   }
-}
-
-extension on String {
-  String ifEmpty(String fallback) => isEmpty ? fallback : this;
 }

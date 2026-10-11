@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../models/file_entry.dart';
+import '../utils/debug_log.dart';
 import 'transfer.dart';
 
 /// Dosya sistemi okuma/yazma işlemleri.
@@ -72,10 +73,14 @@ class FileService {
         if (entity is File) {
           try {
             total += await entity.length();
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('dosya servisi: boyut', e);
+          }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('dosya servisi: yürüyüş', e);
+    }
     return total;
   }
 

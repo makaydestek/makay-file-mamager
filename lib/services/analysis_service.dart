@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../models/file_entry.dart';
+import '../utils/debug_log.dart';
 
 /// Kategori kırılımı: kategori adı → toplam boyut (bayt).
 typedef CategoryBreakdown = Map<String, int>;
@@ -50,10 +51,14 @@ class AnalysisService {
         if (e is File) {
           try {
             total += await e.length();
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('analiz: dosya boyutu', e);
+          }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('analiz: klasör listesi', e);
+    }
     return total;
   }
 
@@ -69,7 +74,9 @@ class AnalysisService {
             if (exts.any(lower.endsWith)) {
               try {
                 total += await e.length();
-              } catch (_) {}
+              } catch (e) {
+                logSwallowed('analiz: arşiv boyutu', e);
+              }
             }
           } else if (e is Directory) {
             final name = e.uri.pathSegments.isEmpty
@@ -79,7 +86,9 @@ class AnalysisService {
             await walk(e, left - 1);
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        logSwallowed('analiz: arşiv yürüyüşü', e);
+      }
     }
 
     await walk(root, depth);
@@ -125,7 +134,9 @@ class AnalysisService {
                 modified: stat.modified,
               ));
             }
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('analiz: büyük dosya ölçümü', e);
+          }
         } else if (e is Directory) {
           if (skipDirs.contains(name)) continue;
           await walk(e, depth - 1);

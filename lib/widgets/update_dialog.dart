@@ -60,7 +60,10 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         if (!ok) {
           try {
             await file.delete();
-          } catch (_) {}
+          } catch (_) {
+            // Bozuk indirme silinemezse bir sonraki indirme benzersiz adla
+            // yazılır; asıl doğrulama hatası zaten kullanıcıya gösterilir.
+          }
           setState(() {
             _phase = _Phase.error;
             _error =

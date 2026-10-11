@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../utils/debug_log.dart';
 import 'cloud/cloud_oauth_flow.dart';
 import 'cloud/cloud_types.dart';
 import 'oauth_service.dart';
@@ -227,7 +228,9 @@ class OneDriveService {
         code = '${error['code'] ?? ''}';
         detail = '${error['message'] ?? body}';
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('onedrive: hata gövdesi ayrıştırma', e);
+    }
     if (status == 401 ||
         status == 403 ||
         code == 'InvalidAuthenticationToken' ||

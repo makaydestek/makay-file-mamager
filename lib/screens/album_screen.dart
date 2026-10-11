@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../services/media_service.dart';
+import '../utils/debug_log.dart';
 import 'image_viewer_screen.dart';
 import 'media_viewer_screen.dart';
 
@@ -98,7 +99,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
         var title = '';
         try {
           title = await asset.titleAsync;
-        } catch (_) {}
+        } catch (e) {
+          logSwallowed('albüm: başlık', e);
+        }
         await navigator.push(
           MaterialPageRoute(
             builder: (_) => file != null

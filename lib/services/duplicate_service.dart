@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../utils/debug_log.dart';
+
 /// Aynı içeriğe sahip 2 veya daha fazla dosyalık mükerrer grup.
 class DuplicateGroup {
   const DuplicateGroup({required this.size, required this.paths});
@@ -88,7 +90,10 @@ class DuplicateService {
         final file = File(path);
         freed += await file.length();
         await file.delete();
-      } catch (_) {}
+      } catch (_) {
+        // Dosya önceden silinmiş ya da erişime kapalı olabilir; kazanılan
+        // alan kısmen sayılır, diğer dosyalar silinmeye devam eder.
+      }
     }
     return freed;
   }
@@ -161,7 +166,9 @@ List<Map<String, Object?>> _findDuplicates(
           final size = e.lengthSync();
           if (size < minSize) continue;
           bySize.putIfAbsent(size, () => <String>[]).add(e.path);
-        } catch (_) {}
+        } catch (e) {
+          logSwallowed('mükerrer: dosya boyutu', e);
+        }
       }
     }
   }
@@ -177,7 +184,9 @@ List<Map<String, Object?>> _findDuplicates(
         final digest = _md5Of(File(path));
         if (digest.isEmpty) continue;
         byHash.putIfAbsent(digest, () => <String>[]).add(path);
-      } catch (_) {}
+      } catch (e) {
+        logSwallowed('mükerrer: md5 özeti', e);
+      }
     }
     for (final paths in byHash.values) {
       if (paths.length < 2) continue;

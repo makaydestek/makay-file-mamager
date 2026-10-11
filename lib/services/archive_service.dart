@@ -742,7 +742,10 @@ class ArchiveService {
     try {
       final file = File(path);
       if (await file.exists()) await file.delete();
-    } catch (_) {}
+    } catch (_) {
+      // Geçici arşiv artığı silinemezse bir sonraki açılışta üzerine yazılır
+      // ya da sistem tarafından temizlenir; işlem sonucu değişmez.
+    }
   }
 
   static bool _matches(String entryName, String wanted) =>

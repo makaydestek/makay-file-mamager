@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 
 /// Geçici dosyalar ekranı: uygulama önbelleği, küçük resim (.thumbnails)
@@ -64,7 +65,10 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
     try {
       final tmp = await getTemporaryDirectory();
       cache = _dirSize(tmp);
-    } catch (_) {}
+    } catch (_) {
+      // Dahili önbellek dizini desteklenmeyen platformda/izinde yoktur;
+      // önbellek boyutu 0 kalır, temizlik yine de güvenlidir.
+    }
 
     // 2) Genel depolama (yalnızca Android).
     if (!kIsWeb && Platform.isAndroid) {
@@ -101,10 +105,14 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
         if (e is File) {
           try {
             total += e.lengthSync();
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('temp_cleaner: boyut', e);
+          }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('temp_cleaner: yürüyüş', e);
+    }
     return total;
   }
 
@@ -129,7 +137,9 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
         if (_isTempName(name) && seen.add(e.path)) {
           try {
             out.add(_TempItem(e, e.lengthSync()));
-          } catch (_) {}
+          } catch (e) {
+            logSwallowed('temp_cleaner: geçici dosya ölçümü', e);
+          }
         }
       } else if (e is Directory && depth > 0) {
         final lower = e.path.toLowerCase();
@@ -156,7 +166,10 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
       try {
         freed += f.lengthSync();
         await f.delete();
-      } catch (_) {}
+      } catch (_) {
+        // Dosya kilitli ya da az önce silinmiş olabilir; temizlik kısmen
+        // başarısız sayılır ve kalan dosyalar temizlenmeye devam eder.
+      }
     }
     await _scan();
     if (!mounted) return;
@@ -178,7 +191,10 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
         try {
           if (e is File) freed += e.lengthSync();
           await e.delete(recursive: true);
-        } catch (_) {}
+        } catch (_) {
+          // Önbellek girdisi kullanımda ya da az önce kaldırılmış olabilir;
+          // temizlik kısmen başarısız sayılır, sonraki tama düzeltir.
+        }
       }
       await _scan();
       if (mounted) {
@@ -203,7 +219,10 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
           try {
             if (e is File) freed += e.lengthSync();
             await e.delete(recursive: true);
-          } catch (_) {}
+          } catch (_) {
+            // Küçük resim dosyası sistem tarafından kullanımda olabilir;
+            // erişilemeyen öbek atlanır, diğerleri silinmeye devam eder.
+          }
         }
       }
       await _scan();

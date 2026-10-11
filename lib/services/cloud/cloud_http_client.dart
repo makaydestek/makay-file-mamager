@@ -235,6 +235,9 @@ class CloudHttpClient {
     if (!target.existsSync()) return;
     try {
       target.deleteSync();
-    } catch (_) {}
+    } catch (_) {
+      // Yarım kalmış indirme temizlenemezse sonraki indirme benzersiz adla
+      // yazılır; biriken artıklar sistem temizliğiyle giderilir.
+    }
   }
 }

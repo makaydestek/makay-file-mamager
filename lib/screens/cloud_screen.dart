@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/google_drive_service.dart';
 import '../services/webdav_service.dart';
+import '../utils/debug_log.dart';
 import 'cloud_add_dialog.dart';
 import 'cloud_common.dart';
 import 'cloud_webdav_browse_screen.dart';
@@ -49,7 +50,9 @@ class _CloudScreenState extends State<CloudScreen> {
         _gdriveConnected = has;
         _gdriveEmail = email;
       });
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('bulut: oturum durumu', e);
+    }
   }
 
   /// Dropbox / OneDrive / Box oturum durumları (bağlıysa listede görünür).

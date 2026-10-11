@@ -13,6 +13,7 @@ import '../services/recycle_bin_service.dart';
 import '../services/root_service.dart';
 import '../services/transfer.dart';
 import '../services/vault_service.dart';
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import '../widgets/folder_tree_panel.dart';
 import '../widgets/transfer_progress_dialog.dart';
@@ -405,7 +406,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     var current = '';
     try {
       current = RootService.modeToString(File(e.path).statSync().mode);
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('tarayıcı: chmod izin okuma', e);
+    }
     final controller = TextEditingController(text: RootService.parseMode(current) ?? '644');
     final mode = await showDialog<String>(
       context: context,
@@ -669,7 +672,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         } else {
           await _service.deleteEntry(path, useRecycleBin: false);
         }
-      } catch (_) {}
+      } catch (e) {
+        logSwallowed('tarayıcı: silme', e);
+      }
     }
     if (mounted) _load();
   }
@@ -700,7 +705,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (newName == null || newName.isEmpty || newName == e.name) return;
     try {
       await _service.rename(e.path, newName);
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('tarayıcı: yeniden adlandırma', e);
+    }
     if (mounted) _load();
   }
 
@@ -730,7 +737,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (name == null || name.isEmpty) return;
     try {
       await _service.createDirectory('$_path${Platform.pathSeparator}$name');
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('tarayıcı: klasör oluşturma', e);
+    }
     if (mounted) _load();
   }
 

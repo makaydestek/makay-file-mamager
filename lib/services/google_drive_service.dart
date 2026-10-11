@@ -457,7 +457,10 @@ class GoogleDriveService {
       if (target.existsSync()) {
         try {
           target.deleteSync();
-        } catch (_) {}
+        } catch (_) {
+          // Yarım indirme temizlenemezse sonraki indirme benzersiz adla
+          // yazılır; asıl hatan zaten rethrow ile yukarı taşındı.
+        }
       }
       rethrow;
     } finally {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/google_drive_service.dart';
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import 'browser_screen.dart' show kAudioExts, kImageExts, kVideoExts;
 import 'image_viewer_screen.dart';
@@ -48,7 +49,9 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     try {
       final account = await GoogleDriveService.account();
       if (mounted) setState(() => _account = account);
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('gdrive: hesap', e);
+    }
   }
 
   Future<void> _load() async {
@@ -235,7 +238,10 @@ class _GoogleDriveScreenState extends State<GoogleDriveScreen> {
     if (!dir.existsSync()) {
       try {
         dir.createSync(recursive: true);
-      } catch (_) {}
+      } catch (_) {
+        // Download klasörü erişilemiyorsa indirme yazma adımı hatayı
+        // zaten açıkça kullanıcıya gösterir; burada yalnızca ön hazırlık.
+      }
     }
     final target = File('${dir.path}${Platform.pathSeparator}${_unique(dir, name)}');
 

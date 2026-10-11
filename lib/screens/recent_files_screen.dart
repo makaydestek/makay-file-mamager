@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:flutter/material.dart';
 
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import 'browser_screen.dart' show kAudioExts, kImageExts, kVideoExts;
 import 'image_viewer_screen.dart';
@@ -240,7 +241,9 @@ List<Map<String, Object?>> _scanRecent(String root,
             'size': stat.size,
             'modified': stat.modified.millisecondsSinceEpoch,
           });
-        } catch (_) {}
+        } catch (e) {
+          logSwallowed('son dosyalar: stat', e);
+        }
       }
     }
   }

@@ -32,7 +32,10 @@ Directory cloudDownloadDir() {
     try {
       if (!dir.existsSync()) dir.createSync(recursive: true);
       if (dir.existsSync()) return dir;
-    } catch (_) {}
+    } catch (_) {
+      // Download klasörü erişilemiyorsa sistem geçici dizinine düşülür;
+      // indirme hedefi her iki durumda da geçerlidir.
+    }
   }
   return Directory.systemTemp;
 }

@@ -5,6 +5,8 @@ import 'dart:math';
 
 import 'ftp_tls_cert.dart';
 
+import '../utils/debug_log.dart';
+
 /// Makay Dosya Yöneticisi — gömülü mini FTP sunucusu.
 ///
 /// Saf Dart soket implementasyonu; PASV (pasif) mod desteklidir.
@@ -407,7 +409,9 @@ class _FtpSession {
           if (!a.isLoopback) return a.address;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('ftp: ağ arayüzü', e);
+    }
     return '127.0.0.1';
   }
 
@@ -557,7 +561,9 @@ class _FtpSession {
     await _closeDataServer();
     try {
       dataSocket?.destroy();
-    } catch (_) {}
+    } catch (_) {
+      // Soket tarafında zaten kapanmış olabilir; israr etmek oturumu bozar.
+    }
     dataSocket = null;
     _dataReady = null;
   }

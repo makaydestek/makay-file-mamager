@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/google_drive_service.dart';
 import '../services/webdav_service.dart';
+import '../utils/debug_log.dart';
 import 'cloud_common.dart';
 import 'cloud_utils.dart';
 
@@ -52,7 +53,9 @@ class _AddCloudDialogState extends State<AddCloudDialog> {
           connected = await api.hasTokens();
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('bulut ekle: sağlayıcı durumu', e);
+    }
     if (!mounted || provider != _provider) return;
     _clientId.text = saved;
     setState(() {
@@ -507,7 +510,10 @@ class _AddCloudDialogState extends State<AddCloudDialog> {
     setState(() => _connecting = true);
     try {
       await api.disconnect();
-    } catch (_) {}
+    } catch (_) {
+      // Yerel oturum zaten düşmüş ya da revize edilmiş olabilir; arayüz
+      // her iki durumda da bağlantısız sayılır, ekran kapanır.
+    }
     if (mounted) {
       setState(() {
         _connecting = false;

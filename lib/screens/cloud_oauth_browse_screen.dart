@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/cloud/cloud_types.dart';
+import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import 'cloud_utils.dart';
 
@@ -107,7 +108,9 @@ class _CloudOAuthBrowseScreenState extends State<CloudOAuthBrowseScreen> {
       final usage = await about();
       if (!mounted || usage == null) return;
       setState(() => _usage = usage);
-    } catch (_) {}
+    } catch (e) {
+      logSwallowed('oauth gezinme: kullanım', e);
+    }
   }
 
   Future<void> _load() async {
@@ -321,7 +324,10 @@ class _CloudOAuthBrowseScreenState extends State<CloudOAuthBrowseScreen> {
     if (ok != true) return;
     try {
       await onDisconnect();
-    } catch (_) {}
+    } catch (_) {
+      // Oturum zaten düşmüş ya da revize edilmiş olabilir; gezinme ekranı
+      // yine de kapatılır, yeniden bağlanma akışı bozulmaz.
+    }
     if (mounted) Navigator.of(context).pop();
   }
 

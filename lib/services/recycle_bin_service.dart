@@ -174,7 +174,10 @@ class RecycleBinService {
         } else {
           await entity.delete();
         }
-      } catch (_) {}
+      } catch (_) {
+        // Öge kilitli ya da az önce silinmiş olabilir; kutu yine de
+        // boşaltılır ve listesi güncellenir, tekil ögeyi bozmaz.
+      }
     }
     _items.clear();
     await _save();
