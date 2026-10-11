@@ -9,6 +9,7 @@ import 'screens/device_mode_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/media_category_screen.dart';
 import 'screens/permissions_screen.dart';
+import 'screens/recent_files_screen.dart';
 import 'screens/recycle_bin_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/apps_screen.dart';
@@ -211,6 +212,9 @@ Route<dynamic> _onGenerateRoute(RouteSettings settings) {
       screen = const RemoteScreen();
     case '/network':
       screen = const NetworkAccessScreen();
+    case '/recent':
+      // Son 7 günde değişen dosyalar (Yeni Dosyalar kategorisi).
+      screen = const RecentFilesScreen();
     case '/recycle':
       screen = const RecycleBinScreen();
     default:

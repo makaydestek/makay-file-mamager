@@ -40,8 +40,17 @@ class Formats {
   }
 
   /// Tarih biçimi: "9 Eki 2026" (yerel: tr); pattern verilirse onu kullanır.
-  static String date(DateTime d, {String pattern = 'd MMM yyyy'}) =>
-      DateFormat(pattern, 'tr').format(d);
+  ///
+  /// 'tr' takvim verisi yalnızca yerelleştirme yükleyicisi çalıştığında hazır
+  /// olur (test/erken açılış gibi durumlarda eksik olabilir); bu yüzden
+  /// başarısız olursa varsayılan locale'e düşer.
+  static String date(DateTime d, {String pattern = 'd MMM yyyy'}) {
+    try {
+      return DateFormat(pattern, 'tr').format(d);
+    } catch (_) {
+      return DateFormat(pattern).format(d);
+    }
+  }
 
   /// Ayarlar ekranındaki tarih biçimi seçenekleri (desen → önizleme).
   static const List<({String pattern, String label})> datePatterns = [

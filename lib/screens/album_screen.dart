@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -49,30 +51,105 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   /// Öğeye göre yerleşik görüntüleyici açılır (resim / video).
+  ///
+  /// Büyük videolarda dosya çözümü (özellikle önbelleğe kopyalarken) zaman
+  /// alabilir; bu sırada ilerleme göstergesi sunulur ve her hata okunabilir
+  /// bir mesajla bildirilir — tıklamanın sessizce kaybolması önlenir.
   Future<void> _openAsset(AssetEntity asset) async {
+    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    if (widget.isVideo) {
-      final file = await asset.file;
-      if (file == null) return;
-      await navigator.push(
-        MaterialPageRoute(
-          builder: (_) => MediaViewerScreen(file: file, isVideo: true),
-        ),
-      );
-    } else {
-      final bytes = await asset
-          .thumbnailDataWithSize(const ThumbnailSize(2048, 2048));
-      if (bytes == null) return;
-      var title = '';
-      try {
-        title = await asset.titleAsync;
-      } catch (_) {}
-      await navigator.push(
-        MaterialPageRoute(
-          builder: (_) => ImageViewerScreen(bytes: bytes, title: title),
-        ),
+    _showProgress();
+    try {
+      if (widget.isVideo) {
+        final file = await _resolveVideo(asset);
+        _hideProgress();
+        if (file == null) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text('Video açılamadı: dosyaya erişilemedi'),
+          ));
+          return;
+        }
+        await navigator.push(
+          MaterialPageRoute(
+            builder: (_) => MediaViewerScreen(file: file, isVideo: true),
+          ),
+        );
+      } else {
+        File? file;
+        try {
+          file = await asset.file;
+          if (file != null && !await file.exists()) file = null;
+        } catch (_) {
+          file = null;
+        }
+        Uint8List? bytes;
+        if (file == null) {
+          // Dosya erişilemiyorsa yüksek çözünürlüklü küçük resme düşülür.
+          bytes = await asset
+              .thumbnailDataWithSize(const ThumbnailSize(2048, 2048));
+        }
+        _hideProgress();
+        if (file == null && bytes == null) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text('Resim açılamadı: dosyaya erişilemedi'),
+          ));
+          return;
+        }
+        var title = '';
+        try {
+          title = await asset.titleAsync;
+        } catch (_) {}
+        await navigator.push(
+          MaterialPageRoute(
+            builder: (_) => file != null
+                ? ImageViewerScreen(file: file, title: title)
+                : ImageViewerScreen(bytes: bytes, title: title),
+          ),
+        );
+      }
+    } catch (e) {
+      _hideProgress();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Açılamadı: $e')),
       );
     }
+  }
+
+  /// Video dosyasını çözer: önce doğrudan dosya, olmazsa orijinal dosya.
+  Future<File?> _resolveVideo(AssetEntity asset) async {
+    File? f;
+    try {
+      f = await asset.file;
+      if (f != null && !await f.exists()) f = null;
+    } catch (_) {
+      f = null;
+    }
+    if (f != null) return f;
+    try {
+      f = await asset.originFile;
+      if (f != null && !await f.exists()) f = null;
+    } catch (_) {
+      f = null;
+    }
+    return f;
+  }
+
+  bool _progressOpen = false;
+
+  void _showProgress() {
+    if (_progressOpen || !mounted) return;
+    _progressOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    ).whenComplete(() => _progressOpen = false);
+  }
+
+  void _hideProgress() {
+    if (!_progressOpen || !mounted) return;
+    _progressOpen = false;
+    Navigator.of(context).pop();
   }
 
   @override

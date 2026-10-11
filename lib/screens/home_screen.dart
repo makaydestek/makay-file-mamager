@@ -1,14 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/home_category.dart';
+import '../providers/settings_provider.dart';
+import '../services/category_size_service.dart';
 import '../widgets/app_drawer.dart';
 
 /// Uygulama ana ekranı: referans uygulamadaki kategori ızgarası.
-class HomeScreen extends StatelessWidget {
+///
+/// Her kategori başlığının altında içeriğin toplam boyutu (veya kayıt
+/// sayısı) gösterilir; değerler arka planda hesaplanır ve önbelleklenir.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Kategori boyutları arka planda hesaplanır; önbellek varsa anında görünür.
+    CategorySizeService.refresh();
+  }
+
+  Future<void> _refresh({bool force = false}) =>
+      CategorySizeService.refresh(force: force);
+
+  /// Seçili görünüm düzenine göre sütun sayısı.
+  ///
+  /// `auto` modu cihaz genişliğine göre davranır; diğerleri kullanıcının
+  /// seçtiği dikey/yatay sütun sayılarını uygular.
+  static int _columnsFor(String viewStyle, BoxConstraints constraints) {
+    if (viewStyle != 'auto') {
+      final portrait = constraints.maxHeight >= constraints.maxWidth;
+      return switch (viewStyle) {
+        'large' => portrait ? 2 : 3,
+        'medium' => portrait ? 3 : 4,
+        'small' => portrait ? 4 : 6,
+        _ => 3,
+      };
+    }
+    // Otomatik: geniş telefon → 3, tablet → 4, çok geniş → 5 sütun.
+    return switch (constraints.maxWidth) {
+      > 1000 => 5,
+      > 600 => 4,
+      _ => 3,
+    };
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Ayar değiştiğinde ızgara anında yeniden kurulur (watch → rebuild).
+    final viewStyle = context.watch<SettingsProvider>().viewStyle;
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
@@ -22,8 +67,9 @@ class HomeScreen extends StatelessWidget {
                 case 'analysis':
                   Navigator.of(context).pushNamed('/analysis');
                 case 'refresh':
+                  _refresh(force: true);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Yenilendi')),
+                    const SnackBar(content: Text('Boyutlar yenileniyor…')),
                   );
               }
             },
@@ -37,23 +83,27 @@ class HomeScreen extends StatelessWidget {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // Telefon: 3 sütun; tablet/TV: genişliğe göre daha fazla sütun.
-          final columns = switch (constraints.maxWidth) {
-            > 1000 => 5,
-            > 600 => 4,
-            _ => 3,
-          };
-          return GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 0.88,
+          final columns = _columnsFor(viewStyle, constraints);
+          return RefreshIndicator(
+            onRefresh: () => _refresh(force: true),
+            child: ValueListenableBuilder<Map<String, String>>(
+              valueListenable: CategorySizeService.labels,
+              builder: (context, sizes, _) => GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(12),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.88,
+                ),
+                itemCount: kHomeCategories.length,
+                itemBuilder: (context, index) => _CategoryTile(
+                  category: kHomeCategories[index],
+                  label: sizes[kHomeCategories[index].id],
+                ),
+              ),
             ),
-            itemCount: kHomeCategories.length,
-            itemBuilder: (context, index) =>
-                _CategoryTile(category: kHomeCategories[index]),
           );
         },
       ),
@@ -62,13 +112,22 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.category});
+  const _CategoryTile({required this.category, this.label});
 
   final HomeCategory category;
+
+  /// Başlık altındaki özet metin (ör. "1,5 GB"); null ise gösterilmez.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          height: 1.1,
+          color: Theme.of(context).colorScheme.outline,
+        );
+    // Yüklenirken ana bellek için yer tutucu metin.
+    final fallback = category.id == 'internal' ? 'Depolama alanı' : null;
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -82,9 +141,9 @@ class _CategoryTile extends StatelessWidget {
           padding: const EdgeInsets.all(6),
           // Kart içeriği taşmasın: sığmazsa hafifçe küçülür.
           child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              child: Column(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -108,16 +167,14 @@ class _CategoryTile extends StatelessWidget {
                         color: isDark ? Colors.white : Colors.black87,
                       ),
                 ),
-                if (category.id == 'internal') ...[
+                if (label != null || fallback != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Depolama alanı',
+                    label ?? fallback!,
+                    textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          height: 1.1,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                    style: labelStyle,
                   ),
                 ],
               ],

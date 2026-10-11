@@ -44,7 +44,7 @@ const List<HomeCategory> kHomeCategories = [
   ),
   HomeCategory(
     id: 'images',
-    title: 'Görüntüler',
+    title: 'Resimler',
     icon: Icons.image_rounded,
     color: Color(0xFF8E24AA),
     route: '/browse/images',
@@ -82,7 +82,7 @@ const List<HomeCategory> kHomeCategories = [
     title: 'Yeni Dosyalar',
     icon: Icons.schedule_rounded,
     color: Color(0xFF546E7A),
-    route: '/browse/recent',
+    route: '/recent',
   ),
   HomeCategory(
     id: 'cloud',

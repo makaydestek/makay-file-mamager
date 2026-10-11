@@ -649,10 +649,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
             leading: Icon(e.icon, color: e.color, size: 32),
             title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            // Referans uygulamadaki gibi "(Tarih • Boyut)" biçiminde.
             subtitle: Text(
-              e.isDirectory
-                  ? 'Klasör'
-                  : '${Formats.size(e.size)} • ${Formats.date(e.modified, pattern: datePattern)}',
+              '(${Formats.date(e.modified, pattern: datePattern)}'
+              '${e.isDirectory ? ' • Klasör' : ' • ${Formats.size(e.size)}'})',
               maxLines: 1,
             ),
             trailing: _selecting

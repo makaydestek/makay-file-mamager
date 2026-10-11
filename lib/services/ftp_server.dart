@@ -225,8 +225,11 @@ class _FtpSession {
         final dataPort = server.pickDataPort();
         dataServer =
             await ServerSocket.bind(InternetAddress.anyIPv4, dataPort);
-        // İstemciye sunulacak adres: sunucunun yerel ağ adresi.
-        final host = await _localAddress();
+        // İstemci sunucuya loopback'ten bağlanıyorsa PASV da loopback
+        // sunar; aksi halde aynı cihazdaki veri bağlantısı yerel ağ
+        // arayüzüne gidip güvenlik duvarına takılabilir.
+        final remote = socket.remoteAddress;
+        final host = remote.isLoopback ? '127.0.0.1' : await _localAddress();
         final parts = host.split('.');
         final p1 = dataPort >> 8;
         final p2 = dataPort & 0xFF;

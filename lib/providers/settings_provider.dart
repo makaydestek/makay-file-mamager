@@ -17,6 +17,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kShowSystemStorage = 'show_system_storage';
   static const _kStorageWarnPercent = 'storage_warn_percent';
   static const _kTvMode = 'tv_mode';
+  static const _kViewStyle = 'view_style';
   static const _kDeviceModeChosen = 'device_mode_chosen';
   static const _kPermissionsOnboarded = 'permissions_onboarded';
 
@@ -102,7 +103,20 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// İlk açılıştaki "Mobil-Tablet / TV sürümü" seçimi yapıldı mı?
+  /// Görünüm düzeni: ana ekran ızgarasındaki sütun sayısı.
+  ///
+  /// • `auto`   → cihaz genişliğine göre (3/4/5)
+  /// • `large`  → büyük kartlar: dikey 2 / yatay 3
+  /// • `medium` → dengeli: dikey 3 / yatay 4
+  /// • `small`  → sıkışık: dikey 4 / yatay 6
+  String get viewStyle => _prefs.getString(_kViewStyle) ?? 'auto';
+
+  set viewStyle(String value) {
+    _prefs.setString(_kViewStyle, value);
+    notifyListeners();
+  }
+
+  /// İlk açılıştaki "Mobil-Tablet / TV sürümü" seçimi yapıldı mı.
   /// Yapılmadıysa uygulama [DeviceModeScreen] ile açılır.
   bool get deviceModeChosen => _prefs.getBool(_kDeviceModeChosen) ?? false;
 

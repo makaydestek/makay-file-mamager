@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../services/google_drive_service.dart';
 import '../services/webdav_service.dart';
+import 'google_drive_screen.dart';
 
 /// Desteklenen bulut sağlayıcıları.
 const kCloudProviders = <String, String>{
@@ -26,6 +29,8 @@ class CloudScreen extends StatefulWidget {
 class _CloudScreenState extends State<CloudScreen> {
   List<CloudLocation> _locations = [];
   bool _loading = true;
+  bool _gdriveConnected = false;
+  String? _gdriveEmail;
 
   @override
   void initState() {
@@ -35,6 +40,7 @@ class _CloudScreenState extends State<CloudScreen> {
 
   Future<void> _load() async {
     final locations = await CloudLocationStore.load();
+    await _refreshGdrive();
     if (!mounted) return;
     setState(() {
       _locations = locations;
@@ -42,15 +48,31 @@ class _CloudScreenState extends State<CloudScreen> {
     });
   }
 
+  /// Google Drive oturum durumu (bağlıysa listede görünür).
+  Future<void> _refreshGdrive() async {
+    try {
+      final has = await GoogleDriveService.hasSession;
+      final email = has ? await GoogleDriveService.accountEmail() : null;
+      if (!mounted) return;
+      setState(() {
+        _gdriveConnected = has;
+        _gdriveEmail = email;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _add() async {
-    final loc = await showDialog<CloudLocation>(
+    final result = await showDialog<Object?>(
       context: context,
       builder: (_) => const _AddCloudDialog(),
     );
-    if (loc == null) return;
-    _locations.add(loc);
-    await CloudLocationStore.save(_locations);
-    setState(() {});
+    if (result is CloudLocation) {
+      _locations.add(result);
+      await CloudLocationStore.save(_locations);
+    }
+    // Google Drive bağlantısı bu diyalogtan kurulmuş olabilir.
+    await _refreshGdrive();
+    if (mounted) setState(() {});
   }
 
   Future<void> _delete(CloudLocation loc) async {
@@ -97,7 +119,8 @@ class _CloudScreenState extends State<CloudScreen> {
                             size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
                         const Text(
-                          'Henüz hesap eklenmedi.\nWebDAV tabanlı bulut '
+                          'Henüz hesap eklenmedi.\nGoogle Drive\'a tarayıcı '
+                          'girişiyle bağlanabilir veya WebDAV tabanlı bulut '
                           'hesaplarınızı (Nextcloud, pCloud, Yandex Disk, '
                           'kendi sunucunuz) ekleyebilirsiniz.',
                           textAlign: TextAlign.center,
@@ -112,54 +135,111 @@ class _CloudScreenState extends State<CloudScreen> {
                     ),
                   ),
                 )
-              : ListView.builder(
+              : ListView(
                   padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: _locations.length,
-                  itemBuilder: (context, index) {
-                    final loc = _locations[index];
-                    return ListTile(
-                      leading: Icon(
-                        Icons.cloud_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      title: Text(loc.name),
-                      subtitle: Text('${loc.provider} • ${loc.username}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        onPressed: () => _delete(loc),
-                      ),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => CloudBrowseScreen(location: loc),
-                        ),
-                      ),
-                    );
-                  },
+                  children: [
+                    _gdriveTile(context),
+                    for (final loc in _locations) _locationTile(loc),
+                  ],
                 ),
+    );
+  }
+
+  /// Google Drive satırı: bağlıysa gezinmeye, değilse bağlanma akışına açılır.
+  Widget _gdriveTile(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        _gdriveConnected ? Icons.cloud_done_rounded : Icons.cloud_queue_rounded,
+        color: _gdriveConnected ? const Color(0xFF1E88E5) : Colors.grey,
+      ),
+      title: const Text('Google Drive'),
+      subtitle: Text(
+        _gdriveConnected
+            ? (_gdriveEmail == null || _gdriveEmail!.isEmpty
+                ? 'Bağlı'
+                : _gdriveEmail!)
+            : 'Bağlı değil — tarayıcıyla giriş yapın',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: _gdriveConnected
+          ? const Icon(Icons.chevron_right_rounded)
+          : FilledButton.tonal(
+              onPressed: () => _openConnect(),
+              child: const Text('Bağlan'),
+            ),
+      onTap: _gdriveConnected
+          ? () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GoogleDriveScreen()),
+              )
+          : null,
+    );
+  }
+
+  Future<void> _openConnect() async {
+    await showDialog<Object?>(
+      context: context,
+      builder: (_) => const _AddCloudDialog(initialProvider: 'Google Drive'),
+    );
+    await _refreshGdrive();
+    if (mounted) setState(() {});
+  }
+
+  Widget _locationTile(CloudLocation loc) {
+    return ListTile(
+      leading: Icon(
+        Icons.cloud_rounded,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      title: Text(loc.name),
+      subtitle: Text('${loc.provider} • ${loc.username}'),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline_rounded),
+        onPressed: () => _delete(loc),
+      ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CloudBrowseScreen(location: loc),
+        ),
+      ),
     );
   }
 }
 
-/// Yeni bulut konumu: sağlayıcı seçimi → WebDAV formu.
+/// Yeni bulut konumu: sağlayıcı seçimi → WebDAV formu veya OAuth akışı.
 class _AddCloudDialog extends StatefulWidget {
-  const _AddCloudDialog();
+  const _AddCloudDialog({this.initialProvider = 'Nextcloud'});
+
+  final String initialProvider;
 
   @override
   State<_AddCloudDialog> createState() => _AddCloudDialogState();
 }
 
 class _AddCloudDialogState extends State<_AddCloudDialog> {
-  String _provider = 'Nextcloud';
+  late String _provider;
   final _name = TextEditingController();
   final _url = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _clientId = TextEditingController();
+
+  bool _clientIdLoaded = false;
+  bool _connecting = false;
 
   @override
   void initState() {
     super.initState();
-    _name.text = 'Nextcloud';
-    _url.text = 'https://sunucu.com/remote.php/dav/files/';
+    _provider = widget.initialProvider;
+    _onProvider(_provider);
+    _loadClientId();
+  }
+
+  Future<void> _loadClientId() async {
+    final saved = await GoogleDriveService.clientId();
+    if (!mounted) return;
+    _clientId.text = saved ?? '';
+    setState(() => _clientIdLoaded = true);
   }
 
   @override
@@ -168,6 +248,7 @@ class _AddCloudDialogState extends State<_AddCloudDialog> {
     _url.dispose();
     _username.dispose();
     _password.dispose();
+    _clientId.dispose();
     super.dispose();
   }
 
@@ -213,15 +294,9 @@ class _AddCloudDialogState extends State<_AddCloudDialog> {
               onChanged: (v) => _onProvider(v ?? _provider),
             ),
             const SizedBox(height: 12),
-            if (needsOAuth) ...[
-              Text(
-                '$_provider için uygulama geliştirici API anahtarı (client ID) '
-                'gereklidir. Ücretsiz sürümümüzde WebDAV tabanlı sağlayıcılar '
-                '(Nextcloud, ownCloud, pCloud, Yandex Disk, kendi sunucunuz) '
-                'doğrudan çalışır.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ] else ...[
+            if (needsOAuth)
+              _oauthPanel(context)
+            else ...[
               TextField(
                 controller: _name,
                 decoration: const InputDecoration(labelText: 'Bağlantı adı'),
@@ -253,29 +328,176 @@ class _AddCloudDialogState extends State<_AddCloudDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Vazgeç'),
+          child: Text(needsOAuth ? 'Kapat' : 'Vazgeç'),
         ),
-        FilledButton(
-          onPressed: needsOAuth
-              ? null
-              : () {
-                  final username = _username.text.trim();
-                  Navigator.of(context).pop(CloudLocation(
-                    name: _name.text.trim().isEmpty
-                        ? _provider
-                        : _name.text.trim(),
-                    provider: _provider,
-                    url: _url.text.trim().endsWith(username)
-                        ? _url.text.trim()
-                        : '${_url.text.trim()}$username',
-                    username: username,
-                    password: _password.text,
-                  ));
-                },
-          child: const Text('Kaydet'),
-        ),
+        if (!needsOAuth)
+          FilledButton(
+            onPressed: () {
+              final username = _username.text.trim();
+              Navigator.of(context).pop(CloudLocation(
+                name: _name.text.trim().isEmpty
+                    ? _provider
+                    : _name.text.trim(),
+                provider: _provider,
+                url: _url.text.trim().endsWith(username)
+                    ? _url.text.trim()
+                    : '${_url.text.trim()}$username',
+                username: username,
+                password: _password.text,
+              ));
+            },
+            child: const Text('Kaydet'),
+          ),
       ],
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // OAuth (Google Drive) paneli
+  // -------------------------------------------------------------------------
+
+  /// Sağlayıcı OAuth ise: ücretsiz client ID rehberi + bağlanma düğmesi.
+  Widget _oauthPanel(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_provider != 'Google Drive') {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          '$_provider bağlantısı sonraki sürümde açılacak. Şu anda OAuth ile '
+          'çalışan sağlayıcı Google Drive’dır; WebDAV tabanlı hesaplar '
+          '(Nextcloud, ownCloud, pCloud, Yandex Disk, kendi sunucunuz) ise '
+          'doğrudan çalışır.',
+          style: theme.textTheme.bodySmall,
+        ),
+      );
+    }
+    if (!_clientIdLoaded) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final hasId = _clientId.text.trim().isNotEmpty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!hasId) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ücretsiz client ID alın (yaklaşık 2 dakika)',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '1. Aşağıdaki düğmeyle Google Cloud Konsolu’nu açın.\n'
+                  '2. Yeni proje oluşturun (örn. “Makay”).\n'
+                  '3. APIs & Services → OAuth consent screen → External → '
+                  'Test users alanına kendi Gmail adresinizi ekleyin.\n'
+                  '4. APIs & Services → Credentials → Create credentials → '
+                  'OAuth client ID → Uygulama türü: “Desktop app” → Create.\n'
+                  '5. Verilen client ID’yi aşağıya yapıştırın ve “Bağlan”.',
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.5),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _openConsole,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('Google Cloud Konsolu’nu aç'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        TextField(
+          controller: _clientId,
+          decoration: const InputDecoration(
+            labelText: 'Google Drive client ID',
+            hintText: 'xxxx.apps.googleusercontent.com',
+            helperText: 'Ücretsizdir; yalnızca sizin Google hesabınızla çalışır',
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _connecting ? null : _connect,
+            icon: _connecting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.login_rounded),
+            label: Text(_connecting
+                ? 'Tarayıcıda giriş yapın…'
+                : 'Google Drive’a bağlan'),
+          ),
+        ),
+        if (hasId && !_connecting)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () async {
+                await GoogleDriveService.setClientId('');
+                if (context.mounted) {
+                  setState(() => _clientId.clear());
+                }
+              },
+              child: const Text('Kayıtlı ID’yi kaldır'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openConsole() async {
+    final uri =
+        Uri.parse('https://console.cloud.google.com/apis/credentials');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Konsol açılamadı: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _connect() async {
+    final id = _clientId.text.trim();
+    if (id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Önce ücretsiz client ID alıp yapıştırın (yukarıdaki adımlar)'),
+        ),
+      );
+      return;
+    }
+    setState(() => _connecting = true);
+    try {
+      await GoogleDriveService.connect(clientID: id);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _connecting = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Bağlanılamadı: $e')));
+      }
+    }
   }
 }
 

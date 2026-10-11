@@ -27,7 +27,7 @@ void main() {
 
     expect(find.text('Makay Dosya Yöneticisi'), findsOneWidget);
     expect(find.text('Ana bellek'), findsOneWidget);
-    expect(find.text('Görüntüler'), findsOneWidget);
+    expect(find.text('Resimler'), findsOneWidget);
     expect(find.text('Videolar'), findsOneWidget);
     expect(find.text('Ağdan erişim'), findsOneWidget);
   });

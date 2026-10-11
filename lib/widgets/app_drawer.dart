@@ -1,10 +1,34 @@
 import 'package:flutter/material.dart';
 
+import '../services/category_size_service.dart';
+import '../services/recycle_bin_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formats.dart';
 
 /// Referans uygulamadaki yan çekmece (drawer) menüsü.
-class AppDrawer extends StatelessWidget {
+class AppDrawer extends StatefulWidget {
   const AppDrawer({super.key});
+
+  @override
+  State<AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<AppDrawer> {
+  int _recycleSize = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecycle();
+  }
+
+  Future<void> _loadRecycle() async {
+    try {
+      await RecycleBinService.instance.load();
+      final total = RecycleBinService.instance.totalSize;
+      if (mounted) setState(() => _recycleSize = total);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,25 +47,31 @@ class AppDrawer extends StatelessWidget {
                     onTap: () =>
                         Navigator.of(context).pushReplacementNamed('/'),
                   ),
-                  _DrawerItem(
-                    icon: Icons.storage_rounded,
-                    title: 'Ana bellek',
-                    trailing: const Text('%9'),
-                    onTap: () =>
-                        Navigator.of(context).pushNamed('/browse/internal'),
+                  // Ana bellek: kullanılan/toplam değerini arka planda gelir.
+                  ValueListenableBuilder<Map<String, String>>(
+                    valueListenable: CategorySizeService.labels,
+                    builder: (context, sizes, _) => _DrawerItem(
+                      icon: Icons.storage_rounded,
+                      title: 'Ana bellek',
+                      trailing: sizes['internal'] == null
+                          ? null
+                          : Text(sizes['internal']!),
+                      onTap: () =>
+                          Navigator.of(context).pushNamed('/browse/internal'),
+                    ),
                   ),
                   const Divider(),
                   _DrawerItem(
                     icon: Icons.delete_sweep_rounded,
                     title: 'Geri Dönüşüm Kutusu',
-                    trailing: const Text('0 B'),
+                    trailing: Text(Formats.size(_recycleSize)),
                     onTap: () => Navigator.of(context).pushNamed('/recycle'),
                   ),
                   const Divider(),
                   _DrawerItem(
                     icon: Icons.schedule_rounded,
                     title: 'Yeni Dosyalar',
-                    onTap: () => Navigator.of(context).pushNamed('/browse/recent'),
+                    onTap: () => Navigator.of(context).pushNamed('/recent'),
                   ),
                   _DrawerItem(
                     icon: Icons.description_rounded,
@@ -61,7 +91,7 @@ class AppDrawer extends StatelessWidget {
                   ),
                   _DrawerItem(
                     icon: Icons.image_rounded,
-                    title: 'Görüntüler',
+                    title: 'Resimler',
                     onTap: () =>
                         Navigator.of(context).pushNamed('/browse/images'),
                   ),

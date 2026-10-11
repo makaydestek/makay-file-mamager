@@ -260,6 +260,55 @@
       regresyon testi eklendi
 - [x] 7 yeni widget testi; analiz temiz, testler 37/37
 
+### A19 — Kullanıcı Geri Bildirimi Serisi (Sürüm 1.0.9) ✅
+Beş maddelik kullanıcı paketi: FTP kaydı, Google Drive bağlantısı,
+kategori boyutları, medya açma ve görüntü stili.
+
+- [x] **Uzak bağlantı kaydı**: "Test" başarılı oluyordu ama "Kaydet"
+      kaydetmiyordu → `_persist()` akışı (kaydet → depodan yeniden yükle
+      → birleşik yedek → başarı/hata SnackBar), `_friendlyError()` ile
+      anlaşılır Türkçe hata metinleri, test sonrası rehber SnackBar
+      ve mounted korumaları
+- [x] **Bağlantı türleri tek tek doğrulandı**: `test/remote_connections_e2e_test.dart`
+      gerçek yerel sunucularla (saf Dart mini FTP + SMB2) FTP/SMB kaydının
+      kalıcılığını, SFTP/WebDAV'da hata → kaydet yolunu test eder; FTP PASV
+      artık döngüsel arayüzde `127.0.0.1` duyurur (aynı cihaz veri bağlantısı)
+      WebDAV adresleri `normalizeUrl` ile (şema/son çizgi) düzeltilir
+- [x] **Google Drive — tarayıcı ile bağlanma**: OAuth 2.0 authorization-code
+      + PKCE, `http://127.0.0.1:<port>/callback` geri çağrısı ile yerel
+      HttpServer; kullanıcı "Masaüstü uygulaması" istemci kimliğini oluşturup
+      uygulamaya yapıştırır → sistem tarayıcısı açılır, oturum sonrası
+      `makayfm://oauth` derin bağlantısıyla uygulamaya dönülür
+      (`url_launcher` externalApplication + AndroidManifest intent-filter)
+- [x] `oauth_service.dart` (genel amaçlı PKCE/loopback akışı),
+      `google_drive_service.dart` (liste/indir/yükle/klasör/çöp/ hakkında +
+      jeton yenileme), `google_drive_screen.dart` (gezinme, ilerleme
+      çubuklu indirme, bilgi, çöp kutusu), `cloud_screen.dart`'ta adım adım
+      rehber paneli ve "Bağlan" düğmesi
+- [x] **Kategori boyutları**: `CategorySizeService` — izolatta (arka plan)
+      tarama + 30 dk SharedPreferences önbelleği; her ana ekran kartında
+      başlık altında boyut ("1,5 GB"), çekmecede iç/dış depolama ve çöp
+      kutusu özeti; "Görüntüler" → **"Resimler"** olarak yeniden adlandırıldı
+- [x] **Yeni Dosyalar ekranı**: `/browse/recent` yerine `/recent` →
+      `RecentFilesScreen` (son 7 gün, büyükten küçüğe, satırlarda
+      `(Tarih • Boyut)`), tür ikonları ve önizleme açılışı
+- [x] **Medya açma**: Albüm ekranında resme/videoya dokununca ilerleme
+      göstergesiyle dosya çözümlenir (`file`/`originFile` + varlık kontrolü),
+      resim için küçük resim yedeği, hata SnackBar'ları; artık sessiz dönme yok
+- [x] **Görüntü stili değiştirilebilir**: Ayarlar → "Görünüm stili" —
+      Otomatik (genişliğe göre 3/4/5), Dengeli (dikey 3 / yatay 4),
+      Geniş (dikey 2 / yatay 3), Sık (dikey 4 / yatay 6); `SettingsProvider.viewStyle`
+      telefon ve TV ana ekranında `context.watch` ile anında uygulanır
+- [x] Teknik düzeltmeler: dizin adı çıkarımı `uri.pathSegments` yerine yol
+      sonundan (dizinlerde segment boş geliyordu), `Isolate.run` kapanış
+      yerine `Isolate.spawn` + `ReceivePort` (test/sanal alan Zone'larında
+      kapanış gönderilemez), `Formats.date` 'tr' verisi yoksa varsayılan
+      locale'e düşer
+- [x] Yeni/güncellenen testler: `remote_connections_e2e_test`,
+      `remote_save_test`, `remote_services_test`, `category_size_service_test`,
+      `recent_files_screen_test`, `google_drive_service_test`,
+      `view_style_test`; analiz temiz, testler 61/61
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.

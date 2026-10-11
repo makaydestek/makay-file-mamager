@@ -76,14 +76,27 @@ class DavEntry {
 class WebDavService {
   const WebDavService();
 
+  /// Şema girilmemiş adresleri tam URL'ye çevirir.
+  ///
+  /// Kullanıcı "next.site.com/remote.php/dav" gibi bir adres yazdığında
+  /// `https://` öneki eklenir; sondaki eğik çizgi de kırpılır.
+  static String normalizeUrl(String url) {
+    var t = url.trim();
+    if (t.isEmpty) return t;
+    final parsed = Uri.tryParse(t);
+    if (parsed == null || !parsed.hasScheme) t = 'https://$t';
+    while (t.endsWith('/')) {
+      t = t.substring(0, t.length - 1);
+    }
+    return t;
+  }
+
   /// [path] WebDAV köküne göre yol ('/' ile başlar).
   Future<List<DavEntry>> list(
     CloudLocation loc, {
     String path = '/',
   }) async {
-    final base = loc.url.endsWith('/')
-        ? loc.url.substring(0, loc.url.length - 1)
-        : loc.url;
+    final base = normalizeUrl(loc.url);
     final uri = Uri.parse('$base${path.isEmpty ? '/' : path}');
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
@@ -148,9 +161,7 @@ class WebDavService {
     String path,
     File target,
   ) async {
-    final base = loc.url.endsWith('/')
-        ? loc.url.substring(0, loc.url.length - 1)
-        : loc.url;
+    final base = normalizeUrl(loc.url);
     final uri = Uri.parse('$base${path.isEmpty ? '/' : path}');
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {

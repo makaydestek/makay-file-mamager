@@ -18,6 +18,8 @@ class ImageViewerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Her iki kaynak da yoksa çökme yerine okunabilir mesaj gösterilir.
+    final hasImage = file != null || bytes != null;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -25,18 +27,31 @@ class ImageViewerScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         title: Text(title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
-      body: GestureDetector(
-        onDoubleTap: () => Navigator.of(context).pop(),
-        child: InteractiveViewer(
-          maxScale: 8,
-          minScale: 0.5,
-          child: Center(
-            child: file != null
-                ? Image.file(file!, fit: BoxFit.contain, gaplessPlayback: true)
-                : Image.memory(bytes!, fit: BoxFit.contain, gaplessPlayback: true),
-          ),
-        ),
-      ),
+      body: !hasImage
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Resim gösterilemedi:\ndosyaya erişilemedi',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            )
+          : GestureDetector(
+              onDoubleTap: () => Navigator.of(context).pop(),
+              child: InteractiveViewer(
+                maxScale: 8,
+                minScale: 0.5,
+                child: Center(
+                  child: file != null
+                      ? Image.file(file!,
+                          fit: BoxFit.contain, gaplessPlayback: true)
+                      : Image.memory(bytes!,
+                          fit: BoxFit.contain, gaplessPlayback: true),
+                ),
+              ),
+            ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(8),

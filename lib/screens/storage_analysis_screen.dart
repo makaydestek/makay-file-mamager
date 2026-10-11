@@ -140,7 +140,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
   /// Kategori dağılımı: ikon + ad + boyut (2 sütun).
   Widget _breakdownGrid(ThemeData theme) {
     const icons = <String, (IconData, Color)>{
-      'Görüntüler': (Icons.image_rounded, Color(0xFF8E24AA)),
+      'Resimler': (Icons.image_rounded, Color(0xFF8E24AA)),
       'Videolar': (Icons.video_library_rounded, Color(0xFFD32F2F)),
       'Ses': (Icons.music_note_rounded, Color(0xFF00897B)),
       'Belgeler': (Icons.description_rounded, Color(0xFF1976D2)),

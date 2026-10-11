@@ -22,23 +22,28 @@ tüm özellikler her kullanıcıya açıktır:
 | Bellek analizi | Kategori bazlı depolama analizi |
 | FTP / Ağ erişimi | Ağdan erişim (FTP sunucu) ve uzak konumlar |
 | Bulut bağlantıları | Dropbox, Drive, OneDrive, Box, Nextcloud, pCloud, Yandex |
+| Google Drive | Tarayıcı ile OAuth (PKCE) bağlanma; klasör gezinme, indirme, yükleme |
 | İlk açılış seçimi | Mobil-Tablet veya TV sürümünü seç; ayarlar otomatik uygulanır |
 | İzin onayı | Dosya/medya izinleri kullanıcıdan istenir; onaysız açılmaz |
+| Görünüm stili | Otomatik / Dengeli / Geniş / Sık — dikey-yatay sütun sayısı seçilebilir |
+| Kategori boyutları | Ana ekran kartlarında başlık altında özet boyut (arka planda hesaplanır) |
 
 ## Ekranlar (referans ekranlardan)
 
 1. **Ana Ekran** — kategori ızgarası: Ana bellek, İndirilenler, Bellek Analizi,
-   Görüntüler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Bulut, Uzak, Ağdan erişim
+   Resimler, Ses, Videolar, Belgeler, Uygulamalar, Yeni Dosyalar, Bulut, Uzak, Ağdan erişim
+   (kartların altında özet boyut; görüntü stili ayarlar'dan değiştirilebilir)
 2. **Çekmece (Drawer)** — Ana Ekran, Ana bellek (%), Geri Dönüşüm Kutusu, ağ sunucuları,
-   hızlı kategoriler (Yeni Dosyalar, Belgeler, Videolar, Ses, Görüntüler, İndirilenler)
+   hızlı kategoriler (Yeni Dosyalar, Belgeler, Videolar, Ses, Resimler, İndirilenler)
 3. **Dosya Tarayıcı** — breadcrumb, liste/ızgara, sıralama, filtre, arama, dosya işlemleri
 4. **Bellek Analizi** — kullanım yüzdesi, kategori dağılımı, büyük dosyalar, uygulamalar
 5. **Uygulamalar** — İndirilenler / Tümü sekmeleri, APK bilgisi ve paylaşımı
 6. **Ağdan Erişim** — FTP sunucu başlat (rastgele şifre, gizli dosyaları göster)
 7. **Uzak** — FTP/SMB uzak konum ekleme ve gezinme
-8. **Bulut** — bulut sağlayıcı hesapları ekleme
-9. **Ayarlar** — dosya boyutu birimi, tarih biçimi, gelişmiş ayarlar, geri dönüşüm
-   kutusu ayarları, bildirimler, tema (açık/koyu/sistem)
+8. **Bulut** — bulut sağlayıcı hesapları ekleme; Google Drive tarayıcı ile bağlanır
+9. **Yeni Dosyalar** — son 7 günde değişen dosyalar, satırlarda (Tarih • Boyut)
+10. **Ayarlar** — dosya boyutu birimi, tarih biçimi, **görünüm stili**, gelişmiş ayarlar,
+    geri dönüşüm kutusu ayarları, bildirimler, tema (açık/koyu/sistem), izinler
 
 ## Geliştirme Aşamaları
 
@@ -53,6 +58,11 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
 - **A6** — Uygulamalar (APK yönetimi)
 - **A7** — Ağdan erişim (FTP sunucu), Uzak (FTP/SMB), Bulut
 - **A8** — Tablet/TV uyarlaması (D-pad odak, geniş ekran), beta APK üretimi
+- **A9–A18** — oynatıcı/önizleme, SMB sunucusu + FTPS + SFTP, TV kanalı,
+  uzak konum türleri, marka, Premium kaldırma, GitHub Releases dağıtımı,
+  ilk açılış sürüm + izin onayı
+- **A19** — geri bildirim serisi: uzak bağlantı kaydı, Google Drive tarayıcı
+  bağlanma (OAuth PKCE), kategori boyutları, medya açma, görüntü stili
 
 ## Otomatik Güncelleme
 

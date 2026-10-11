@@ -18,7 +18,7 @@ class AnalysisService {
 
     final root = Platform.isAndroid ? '/storage/emulated/0' : null;
     if (root != null) {
-      result['Görüntüler'] = await _dirSize('$root/DCIM') +
+      result['Resimler'] = await _dirSize('$root/DCIM') +
           await _dirSize('$root/Pictures');
       result['Videolar'] = await _dirSize('$root/Movies') +
           await _dirSize('$root/WhatsApp/Media/WhatsApp Video');
@@ -32,7 +32,7 @@ class AnalysisService {
           await _dirSize('$root/Telegram');
     } else {
       result
-        ..putIfAbsent('Görüntüler', () => 0)
+        ..putIfAbsent('Resimler', () => 0)
         ..putIfAbsent('Videolar', () => 0)
         ..putIfAbsent('Ses', () => 0)
         ..putIfAbsent('Belgeler', () => 0)

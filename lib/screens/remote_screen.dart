@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../services/remote_service.dart';
@@ -59,10 +62,40 @@ class _RemoteScreenState extends State<RemoteScreen> {
       context: context,
       builder: (_) => RemoteFormDialog(initialType: type),
     );
-    if (loc == null) return;
-    _locations.add(loc);
-    await RemoteLocationStore.save(_locations);
-    setState(() {});
+    if (loc == null || !mounted) return;
+    await _persist(
+      List<RemoteLocation>.of(_locations)..add(loc),
+      successMessage: '"${loc.name}" kaydedildi ✅',
+    );
+  }
+
+  /// Listeyi kalıcı olarak yazar, diskten geri okur ve sonucu bildirir.
+  ///
+  /// Kayıt işleminin gerçekten tamamlandığı [RemoteLocationStore.load()]
+  /// ile doğrulanır; kullanıcıya açık bir geri bildirim gösterilir.
+  Future<void> _persist(
+    List<RemoteLocation> next, {
+    required String successMessage,
+  }) async {
+    try {
+      await RemoteLocationStore.save(next);
+      final fresh = await RemoteLocationStore.load();
+      // Kalıcılık sorununda bile bağlantı oturumda görünür kalsın.
+      final merged = fresh.isEmpty && next.isNotEmpty ? next : fresh;
+      if (!mounted) return;
+      setState(() => _locations = merged);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (e) {
+      if (!mounted) return;
+      // Hata durumunda bile bellekteki liste güncellenir.
+      setState(() => _locations = next);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+            SnackBar(content: Text('Kaydedilemedi: ${_friendlyError(e)}')));
+    }
   }
 
   Future<void> _delete(RemoteLocation loc) async {
@@ -84,9 +117,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
       ),
     );
     if (confirmed != true) return;
-    _locations.remove(loc);
-    await RemoteLocationStore.save(_locations);
-    setState(() {});
+    await _persist(
+      List<RemoteLocation>.of(_locations)..remove(loc),
+      successMessage: '"${loc.name}" kaldırıldı',
+    );
   }
 
   void _open(RemoteLocation loc) {
@@ -336,15 +370,21 @@ class _RemoteFormDialogState extends State<RemoteFormDialog> {
           await const FtpClientService().test(loc);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bağlantı başarılı ✅')),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+                content:
+                    Text('Bağlantı başarılı ✅ — kaydetmek için "Kaydet"e basın')),
+          );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bağlantı başarısız: $e')),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text('Bağlantı başarısız: ${_friendlyError(e)}')),
+          );
       }
     } finally {
       if (mounted) setState(() => _testing = false);
@@ -443,4 +483,20 @@ class _RemoteFormDialogState extends State<RemoteFormDialog> {
       ],
     );
   }
+}
+
+/// Bağlantı hatalarının kullanıcıya okunabilir metne çevrilmesi.
+String _friendlyError(Object e) {
+  if (e is SocketException) {
+    final where = [e.address?.address, e.port?.toString()]
+        .where((s) => s != null && s.isNotEmpty)
+        .join(':');
+    return where.isEmpty
+        ? 'Sunucuya ulaşılamadı'
+        : 'Sunucuya ulaşılamadı ($where)';
+  }
+  if (e is TimeoutException) return 'Bağlantı zaman aşımına uğradı';
+  if (e is HttpException) return e.message;
+  final text = e.toString();
+  return text.length > 160 ? '${text.substring(0, 160)}…' : text;
 }

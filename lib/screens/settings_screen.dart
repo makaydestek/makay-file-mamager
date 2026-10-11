@@ -42,6 +42,17 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _pickUiMode(context, settings),
           ),
           ListTile(
+            title: const Text('Görünüm düzeni'),
+            subtitle: Text(switch (settings.viewStyle) {
+              'large' => 'Büyük kartlar (dikey 2 / yatay 3)',
+              'medium' => 'Dengeli (dikey 3 / yatay 4)',
+              'small' => 'Sıkışık (dikey 4 / yatay 6)',
+              _ => 'Otomatik (cihaz genişliğine göre)',
+            }),
+            leading: const Icon(Icons.grid_view_rounded),
+            onTap: () => _pickViewStyle(context, settings),
+          ),
+          ListTile(
             title: const Text('İzinler'),
             subtitle: const Text('Dosya ve medya izinlerini yönet'),
             leading: const Icon(Icons.shield_rounded),
@@ -279,6 +290,41 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (mode != null) settings.tvMode = mode;
+  }
+
+  /// Görünüm düzeni seçimi: dikey/yatay sütun sayısı.
+  static Future<void> _pickViewStyle(
+      BuildContext context, SettingsProvider settings) async {
+    const labels = <String, String>{
+      'auto': 'Otomatik (cihaz genişliğine göre)',
+      'large': 'Büyük kartlar — dikey 2 / yatay 3',
+      'medium': 'Dengeli — dikey 3 / yatay 4',
+      'small': 'Sıkışık — dikey 4 / yatay 6',
+    };
+    final style = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Görünüm düzeni'),
+        children: [
+          RadioGroup<String>(
+            groupValue: settings.viewStyle,
+            onChanged: (v) {
+              if (v != null) Navigator.of(context).pop(v);
+            },
+            child: Column(
+              children: [
+                for (final m in labels.entries)
+                  RadioListTile<String>(
+                    title: Text(m.value),
+                    value: m.key,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (style != null) settings.viewStyle = style;
   }
 
   static Future<void> _pickSizeUnit(

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/home_category.dart';
+import '../providers/settings_provider.dart';
+import '../services/category_size_service.dart';
 import '../widgets/app_drawer.dart';
 
 /// TV'ye özel ana ekran: odaklı büyük kart ızgarası, kumanda (D-pad)
@@ -16,8 +19,17 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   int _focusedIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // Kategori boyutları arka planda hesaplanır.
+    CategorySizeService.refresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Ayar değiştiğinde ızgara anında yeniden kurulur.
+    final viewStyle = context.watch<SettingsProvider>().viewStyle;
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
@@ -49,25 +61,37 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final columns = constraints.maxWidth > 1200 ? 5 : 4;
-                return GridView.builder(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 48, vertical: 16),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: 20,
-                    crossAxisSpacing: 20,
-                    childAspectRatio: 1.15,
-                  ),
-                  itemCount: kHomeCategories.length,
-                  itemBuilder: (context, index) => _TvCategoryCard(
-                    category: kHomeCategories[index],
-                    autofocus: index == 0,
-                    onFocus: (focused) {
-                      if (focused && mounted) {
-                        setState(() => _focusedIndex = index);
-                      }
-                    },
+                // Görünüm düzeni ayarı (dikey/yatay sütun sayısı).
+                final portrait =
+                    constraints.maxHeight >= constraints.maxWidth;
+                final columns = switch (viewStyle) {
+                  'large' => portrait ? 2 : 3,
+                  'medium' => portrait ? 3 : 4,
+                  'small' => portrait ? 4 : 6,
+                  _ => constraints.maxWidth > 1200 ? 5 : 4,
+                };
+                return ValueListenableBuilder<Map<String, String>>(
+                  valueListenable: CategorySizeService.labels,
+                  builder: (context, sizes, _) => GridView.builder(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 48, vertical: 16),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 20,
+                      crossAxisSpacing: 20,
+                      childAspectRatio: 1.15,
+                    ),
+                    itemCount: kHomeCategories.length,
+                    itemBuilder: (context, index) => _TvCategoryCard(
+                      category: kHomeCategories[index],
+                      label: sizes[kHomeCategories[index].id],
+                      autofocus: index == 0,
+                      onFocus: (focused) {
+                        if (focused && mounted) {
+                          setState(() => _focusedIndex = index);
+                        }
+                      },
+                    ),
                   ),
                 );
               },
@@ -122,11 +146,15 @@ class _TvCategoryCard extends StatefulWidget {
   const _TvCategoryCard({
     required this.category,
     required this.onFocus,
+    this.label,
     this.autofocus = false,
   });
 
   final HomeCategory category;
   final ValueChanged<bool> onFocus;
+
+  /// Başlık altındaki özet (ör. "1,5 GB"); null ise gösterilmez.
+  final String? label;
   final bool autofocus;
 
   @override
@@ -186,6 +214,20 @@ class _TvCategoryCardState extends State<_TvCategoryCard> {
                     fontWeight: _focused ? FontWeight.bold : FontWeight.w500,
                   ),
                 ),
+                if (widget.label != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.label!,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: _focused
+                          ? widget.category.color
+                          : theme.colorScheme.outline,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
