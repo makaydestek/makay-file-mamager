@@ -31,10 +31,17 @@ class VaultEntry {
 
 /// PIN ile korunan, AES-256-GCM ile şifrelenmiş dosya kasası.
 ///
-/// * Anahtar: PBKDF2-HMAC-SHA256, 20.000 tur, 32 bayt; tuz 16 bayt rastgele.
+/// * Anahtar: PBKDF2-HMAC-SHA256, [kdfIterations] tur, 32 bayt;
+///   tuz 16 bayt rastgele.
 /// * PIN doğrulama: anahtarla şifrelenen bilinen metin ("doğrulayıcı").
 /// * Kalıcılık: [SharedPreferences] içinde `vault_meta` (JSON) + kasa
 ///   dizininde `<id>.enc` dosyaları.
+/// * Çevrimdışı kaba kuvveti yavaşlatmak için tur sayısı meta veride
+///   saklanır (`kdfIterations`); eski kayıtlarda bu alan yoktur ve
+///   [legacyKdfIterations] kullanılır — böylece 1.0.x kasaları açılmaya
+///   devam eder.
+/// * Çevrimiçi denemeleri yavaşlatmak için üstel geri çekilmeli
+///   (backoff) kilitlenme uygulanır (bkz. [lockoutBackoffSeconds]).
 ///
 /// Dosya biçimi: 12 bayt nonce + AES-GCM şifreli içerik + 16 bayt MAC etiketi
 /// (pointycastle GCM çıktısı içerik+etiketi birleştirir).
@@ -44,8 +51,34 @@ class VaultService {
   static const String _prefsKey = 'vault_meta';
   static const int _formatVersion = 1;
 
-  /// PIN'den anahtar türetme tur sayısı.
-  static const int _kdfIterations = 20000;
+  /// Hatalı deneme/kilitlenme kaydının [SharedPreferences] anahtarı.
+  static const String _lockoutKey = 'vault_lockout';
+
+  /// Yeni kasalar ve yeni PIN'ler için PBKDF2-HMAC-SHA256 tur sayısı.
+  ///
+  /// Gerekçe: 1.0.x'te 20.000 tur kullanılıyordu; bu, verifier yanında
+  /// saklanan kısa PIN'e karşı çevrimdışı kaba kuvveti ucuza yapılabiliyordu.
+  /// 200.000 tur (10× artış) seçildi: pointycastle saf Dart'ta çalıştığı için
+  /// tur sayısı cihaz kilidi açma gecikmesini doğrudan belirler; 200.000 tur
+  /// orta seviye bir telefonda tek denemeyi ~0,5–0,8 sn aralığında tutarken
+  /// çevrimdışı deneme maliyetini 10 katına çıkarır. OWASP'ın önerdiği
+  /// 600.000 yerine bu değer, "tek açılış rahatlıkla 1 sn'nin altında"
+  /// şartıyla dengelenerek seçildi.
+  static const int kdfIterations = 200000;
+
+  /// 1.0.x kasalarının anahtar türetme tur sayısı (meta veride `kdfIterations`
+  /// alanı **yoksa** kullanılır; mevcut kasalar bu değerle açılmaya devam eder).
+  static const int legacyKdfIterations = 20000;
+
+  /// İzin verilen PIN uzunluğu (hanne).
+  static const int pinMinLength = 6;
+  static const int pinMaxLength = 12;
+
+  /// Arka arkaya hatalı deneme sayısına göre kilitlenme (saniye):
+  /// 1. hata → 0 sn, 2. hata → 5 sn, 3. hata → 15 sn, 4. hata → 60 sn,
+  /// 5. hata → 5 dk, 6. ve sonrası → 30 dk (üst sınır).
+  static const List<int> lockoutBackoffSeconds = [0, 5, 15, 60, 300, 1800];
+
   static const int _saltLen = 16;
   static const int _ivLen = 12;
   static const int _tagLen = 16;
@@ -56,6 +89,11 @@ class VaultService {
 
   /// @visibleForTesting: kasa kökünü zorlar (testlerde geçici dizin).
   static String? debugRoot;
+
+  /// Servisin gördüğü saat. Testlerde sahte zamanla beslenerek kilitlenme
+  /// geri sayımları uyumaya gerek kalmadan sınanabilir.
+  @visibleForTesting
+  static DateTime Function() now = DateTime.now;
 
   static Uint8List? _key;
 
@@ -99,7 +137,8 @@ class VaultService {
 
   // ------------------------------------------------------------- meta --
 
-  static Future<({Uint8List salt, Uint8List verifier})?> _readMeta() async {
+  static Future<({Uint8List salt, Uint8List verifier, int kdfIterations})?>
+      _readMeta() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     if (raw == null) return null;
@@ -108,13 +147,17 @@ class VaultService {
       return (
         salt: _fromHex(map['salt'] as String),
         verifier: _fromHex(map['verifier'] as String),
+        // 1.0.x meta verisinde alan yok; eski tur sayısıyla açılır.
+        kdfIterations:
+            (map['kdfIterations'] as num?)?.toInt() ?? legacyKdfIterations,
       );
     } catch (_) {
       return null;
     }
   }
 
-  static Future<void> _writeMeta(Uint8List salt, Uint8List verifier) async {
+  static Future<void> _writeMeta(
+      Uint8List salt, Uint8List verifier, int iterations) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _prefsKey,
@@ -122,6 +165,7 @@ class VaultService {
         'v': _formatVersion,
         'salt': _toHex(salt),
         'verifier': _toHex(verifier),
+        'kdfIterations': iterations,
       }),
     );
   }
@@ -129,36 +173,64 @@ class VaultService {
   /// PIN ayarlanmış mı.
   static Future<bool> isConfigured() async => (await _readMeta()) != null;
 
+  /// PIN'in izin verilen uzunlukta yalnız hanelerden oluşup oluşmadığı.
+  ///
+  /// Yalnızca **yeni** PIN'lerde (oluşturma/değiştirme) geçerlidir; mevcut
+  /// bir kasadaki eski, kısa PIN'ler açılışta hâlâ kabul edilir.
+  static bool isValidPin(String pin) =>
+      pin.length >= pinMinLength &&
+      pin.length <= pinMaxLength &&
+      RegExp(r'^[0-9]+$').hasMatch(pin);
+
   /// Kasa oluşturur: tuz + anahtar türetilir, doğrulayıcı kaydedilir.
   ///
+  /// [pin] geçersizse (bkz. [isValidPin]) [ArgumentError] fırlatır.
   /// Başarıdan sonra hizmet anahtarla **açık** durumdadır; ekran istemese
   /// [lock] çağrılmalıdır.
   static Future<void> create(String pin) async {
+    if (!isValidPin(pin)) {
+      throw ArgumentError('PIN $pinMinLength-$pinMaxLength hane olmalı');
+    }
     final salt = _randomBytes(_saltLen);
-    final key = _deriveKey(pin, salt);
+    final key = _deriveKey(pin, salt, kdfIterations);
     final verifier = _encrypt(key, _plainBytes(_verifierPlain));
-    await _writeMeta(salt, verifier);
+    await _writeMeta(salt, verifier, kdfIterations);
     await _ensureDir();
+    await _clearLockout();
     _key = key;
   }
 
   /// Doğru PIN verilirse anahtarı belleğe alır; yanlışsa false döner.
+  ///
+  /// Kilitlenme süresi dolmadan hiçbir deneme anahtar türetmez ve false
+  /// döner. Yanlış deneme sayacı artar, başarılı açılışta sıfırlanır.
   static Future<bool> unlock(String pin) async {
+    if (await lockoutRemaining() > Duration.zero) return false;
     final meta = await _readMeta();
     if (meta == null) return false;
-    final key = _deriveKey(pin, meta.salt);
-    if (!_checkVerifier(key, meta.verifier)) return false;
+    final key = _deriveKey(pin, meta.salt, meta.kdfIterations);
+    if (!_checkVerifier(key, meta.verifier)) {
+      await _registerFailure();
+      return false;
+    }
+    await _clearLockout();
     _key = key;
     return true;
   }
 
   /// Tüm kasayı yeniden şifreler ve PIN'i değiştirir.
   ///
-  /// [oldPin] yanlışsa [ArgumentError] fırlatır.
+  /// [oldPin] yanlışsa [ArgumentError], [newPin] geçersizse (bkz.
+  /// [isValidPin]) [ArgumentError] fırlatır. Yeni PIN her zaman güncel
+  /// [kdfIterations] değeriyle türetilir; eski PIN kayıtlı tur sayısıyla
+  /// doğrulanır.
   static Future<void> changePin(String oldPin, String newPin) async {
+    if (!isValidPin(newPin)) {
+      throw ArgumentError('PIN $pinMinLength-$pinMaxLength hane olmalı');
+    }
     final meta = await _readMeta();
     if (meta == null) throw StateError('Kasa oluşturulmamış');
-    final oldKey = _deriveKey(oldPin, meta.salt);
+    final oldKey = _deriveKey(oldPin, meta.salt, meta.kdfIterations);
     if (!_checkVerifier(oldKey, meta.verifier)) {
       throw ArgumentError('Eski PIN hatalı');
     }
@@ -182,7 +254,7 @@ class VaultService {
     }
 
     final newSalt = _randomBytes(_saltLen);
-    final newKey = _deriveKey(newPin, newSalt);
+    final newKey = _deriveKey(newPin, newSalt, kdfIterations);
     for (final item in pending) {
       await _entryFile(dir, item.id).writeAsBytes(
         _join(
@@ -196,7 +268,8 @@ class VaultService {
       );
     }
     final newVerifier = _encrypt(newKey, _plainBytes(_verifierPlain));
-    await _writeMeta(newSalt, newVerifier);
+    await _writeMeta(newSalt, newVerifier, kdfIterations);
+    await _clearLockout();
     _key = newKey;
   }
 
@@ -204,9 +277,75 @@ class VaultService {
   static Future<void> reset() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
+    await prefs.remove(_lockoutKey);
     final dir = await _vaultDir();
     if (await dir.exists()) await dir.delete(recursive: true);
     _key = null;
+  }
+
+  // -------------------------------------------------------- kilitlenme --
+
+  /// [failures] hatalı deneme sonrası bekleme (üstel geri çekilmeli).
+  ///
+  /// [lockoutBackoffSeconds] listesinden okunur; liste bittikten sonra
+  /// son (en uzun) değer uygulanır.
+  static Duration lockoutBackoff(int failures) {
+    if (failures <= 0) return Duration.zero;
+    final index = min(failures - 1, lockoutBackoffSeconds.length - 1);
+    return Duration(seconds: lockoutBackoffSeconds[index]);
+  }
+
+  /// Kilitlenme kaydındaki arka arkaya hatalı deneme sayısı.
+  ///
+  /// Başarılı açılışta (ve kasa oluşturma/sıfırlamada) sıfırlanır.
+  static Future<int> failedAttempts() async =>
+      (await _readLockout())?.failures ?? 0;
+
+  /// Kalan kilitlenme süresi; [Duration.zero] ise deneme serbesttir.
+  ///
+  /// Ekran bu değeri okuyup saniye saniye geri sayım gösterir.
+  static Future<Duration> lockoutRemaining() async {
+    final state = await _readLockout();
+    if (state == null || state.failures <= 0) return Duration.zero;
+    final end = state.last.add(lockoutBackoff(state.failures));
+    final remaining = end.difference(now());
+    if (remaining <= Duration.zero) return Duration.zero;
+    // Tam saniyeye yukarı yuvarlanır ki geri sayım 5…4…3 diye başlasın.
+    return Duration(seconds: (remaining.inMilliseconds + 999) ~/ 1000);
+  }
+
+  /// Kilitlenme kaydını okur (`{f: deneme, t: son hata (ms epoch)}`).
+  static Future<({int failures, DateTime last})?> _readLockout() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lockoutKey);
+    if (raw == null) return null;
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final failures = (map['f'] as num).toInt();
+      if (failures <= 0) return null;
+      return (
+        failures: failures,
+        last: DateTime.fromMillisecondsSinceEpoch((map['t'] as num).toInt()),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Yanlış PIN'de sayacı bir artırır ve son hata zamanını günceller.
+  static Future<void> _registerFailure() async {
+    final prefs = await SharedPreferences.getInstance();
+    final failures = (await _readLockout())?.failures ?? 0;
+    await prefs.setString(
+      _lockoutKey,
+      jsonEncode({'f': failures + 1, 't': now().millisecondsSinceEpoch}),
+    );
+  }
+
+  /// Hatalı deneme sayacını siler (başarılı açılışta çağrılır).
+  static Future<void> _clearLockout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_lockoutKey);
   }
 
   // -------------------------------------------------------------- dosya --
@@ -275,9 +414,9 @@ class VaultService {
 
   // ---------------------------------------------------------- şifreleme --
 
-  static Uint8List _deriveKey(String pin, Uint8List salt) {
+  static Uint8List _deriveKey(String pin, Uint8List salt, int iterations) {
     final derivator = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
-    derivator.init(Pbkdf2Parameters(salt, _kdfIterations, _keyLen));
+    derivator.init(Pbkdf2Parameters(salt, iterations, _keyLen));
     return derivator.process(Uint8List.fromList(utf8.encode(pin)));
   }
 

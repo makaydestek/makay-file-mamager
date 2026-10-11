@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,14 @@ class _VaultScreenState extends State<VaultScreen> {
   List<VaultEntry> _entries = const [];
   String? _error;
 
+  /// Kalan kilitlenme süresi; sıfırsa kilitleme/açma serbesttir.
+  Duration _lockoutLeft = Duration.zero;
+
+  /// Servisteki arka arkaya hatalı deneme sayısı.
+  int _failures = 0;
+
+  Timer? _lockoutTimer;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +44,7 @@ class _VaultScreenState extends State<VaultScreen> {
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel();
     _pin.dispose();
     _pinConfirm.dispose();
     _pinCreate.dispose();
@@ -49,13 +59,73 @@ class _VaultScreenState extends State<VaultScreen> {
       entries = await VaultService.list();
       unlocked = true;
     }
+    final lockout = await VaultService.lockoutRemaining();
+    final failures = await VaultService.failedAttempts();
     if (!mounted) return;
     setState(() {
       _configured = configured;
       _unlocked = unlocked;
       _entries = entries;
+      _lockoutLeft = lockout;
+      _failures = failures;
       _loading = false;
     });
+    _updateLockoutTimer();
+  }
+
+  // ----------------------------------------------------------- kilitlenme --
+
+  /// Kilitlenme sürerken geri sayımın saniyede bir azalmasını sağlar.
+  void _updateLockoutTimer() {
+    if (_lockoutLeft > Duration.zero) {
+      _lockoutTimer ??=
+          Timer.periodic(const Duration(seconds: 1), (_) => _lockoutTick());
+    } else if (_lockoutTimer != null) {
+      _lockoutTimer!.cancel();
+      _lockoutTimer = null;
+    }
+  }
+
+  void _lockoutTick() {
+    if (!mounted) {
+      _lockoutTimer?.cancel();
+      _lockoutTimer = null;
+      return;
+    }
+    setState(() {
+      _lockoutLeft -= const Duration(seconds: 1);
+      if (_lockoutLeft < Duration.zero) _lockoutLeft = Duration.zero;
+      if (_lockoutLeft == Duration.zero && _failures > 0) {
+        // Süre doldu: kalan deneme bilgisi tekrar gösterilir. Kalan süre
+        // kesin olarak servisten gelir; kullanıcı denemesinde servis yine
+        // esas kaynağıdır.
+        _error = _wrongPinText(_failures);
+      }
+    });
+    if (_lockoutLeft == Duration.zero) {
+      _lockoutTimer?.cancel();
+      _lockoutTimer = null;
+    }
+  }
+
+  /// Uzun (30 dk) kilitlenmeye kalan hatalı deneme sayısı.
+  int _remainingAttempts(int failures) {
+    final capIndex = VaultService.lockoutBackoffSeconds.length - 1;
+    return failures >= capIndex ? 0 : capIndex - failures;
+  }
+
+  String _wrongPinText(int failures) =>
+      'PIN hatalı. Kalan deneme: ${_remainingAttempts(failures)}';
+
+  String _lockoutText(Duration remaining) =>
+      'PIN için çok fazla deneme yapıldı. ${_countdownText(remaining)}';
+
+  String _countdownText(Duration remaining) {
+    final seconds = remaining.inSeconds;
+    if (seconds < 60) return '$seconds saniye sonra tekrar deneyin';
+    final minutes = (seconds + 59) ~/ 60;
+    if (minutes < 60) return '$minutes dakika sonra tekrar deneyin';
+    return '${(minutes + 59) ~/ 60} saat sonra tekrar deneyin';
   }
 
   // ------------------------------------------------------------- eylemler --
@@ -63,8 +133,10 @@ class _VaultScreenState extends State<VaultScreen> {
   Future<void> _create() async {
     final pin = _pinCreate.text.trim();
     final confirm = _pinConfirm.text.trim();
-    if (pin.length < 4) {
-      setState(() => _error = 'PIN en az 4 haneli olmalı');
+    if (!VaultService.isValidPin(pin)) {
+      setState(() => _error =
+          'PIN ${VaultService.pinMinLength} ile ${VaultService.pinMaxLength} '
+          'hane arasında olmalı');
       return;
     }
     if (pin != confirm) {
@@ -87,6 +159,7 @@ class _VaultScreenState extends State<VaultScreen> {
   }
 
   Future<void> _unlock() async {
+    if (_lockoutLeft > Duration.zero) return;
     final pin = _pin.text.trim();
     setState(() {
       _error = null;
@@ -96,9 +169,20 @@ class _VaultScreenState extends State<VaultScreen> {
     if (!mounted) return;
     setState(() => _loading = false);
     if (!ok) {
-      setState(() => _error = 'PIN hatalı');
+      final remaining = await VaultService.lockoutRemaining();
+      final failures = await VaultService.failedAttempts();
+      if (!mounted) return;
+      final lockedOut = remaining > Duration.zero;
+      setState(() {
+        _lockoutLeft = remaining;
+        _failures = failures;
+        _error = lockedOut ? null : _wrongPinText(failures);
+      });
+      _updateLockoutTimer();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PIN hatalı')),
+        SnackBar(
+          content: Text(lockedOut ? _lockoutText(remaining) : 'PIN hatalı'),
+        ),
       );
       return;
     }
@@ -227,7 +311,8 @@ class _VaultScreenState extends State<VaultScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            'Dosyalarınızı korumak için bir PIN belirleyin. '
+            'Dosyalarınızı korumak için bir PIN belirleyin. 6 ile 12 hane '
+            'kullanabilirsiniz; 8 hane ve üzeri PIN\'ler önerilir. '
             'PIN unutulursa dosyalar kurtarılamaz.',
           ),
           const SizedBox(height: 16),
@@ -235,9 +320,10 @@ class _VaultScreenState extends State<VaultScreen> {
             controller: _pinCreate,
             obscureText: true,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: VaultService.pinMaxLength,
             decoration: const InputDecoration(
               labelText: 'PIN',
+              helperText: '6-12 hane; 8 hane ve üzeri önerilir',
               border: OutlineInputBorder(),
             ),
           ),
@@ -246,9 +332,10 @@ class _VaultScreenState extends State<VaultScreen> {
             controller: _pinConfirm,
             obscureText: true,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: VaultService.pinMaxLength,
             decoration: const InputDecoration(
               labelText: 'PIN (tekrar)',
+              helperText: '6-12 hane; 8 hane ve üzeri önerilir',
               border: OutlineInputBorder(),
             ),
           ),
@@ -273,6 +360,7 @@ class _VaultScreenState extends State<VaultScreen> {
   }
 
   Widget _buildLocked() {
+    final lockedOut = _lockoutLeft > Duration.zero;
     return Scaffold(
       appBar: AppBar(title: const Text('Kasa')),
       body: ListView(
@@ -285,14 +373,23 @@ class _VaultScreenState extends State<VaultScreen> {
             controller: _pin,
             obscureText: true,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: VaultService.pinMaxLength,
             decoration: const InputDecoration(
               labelText: 'PIN',
               border: OutlineInputBorder(),
             ),
             onSubmitted: (_) => _unlock(),
           ),
-          if (_error != null) ...[
+          if (lockedOut) ...[
+            const SizedBox(height: 12),
+            Text(
+              _lockoutText(_lockoutLeft),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ] else if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
               _error!,
@@ -304,7 +401,8 @@ class _VaultScreenState extends State<VaultScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: _unlock,
+            // Kilitlenme süresince açma denemesi yapılamaz.
+            onPressed: lockedOut || _loading ? null : _unlock,
             child: const Text('KİLİT AÇ'),
           ),
         ],
@@ -420,8 +518,9 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
       setState(() => _error = 'Eski PIN boş olamaz');
       return;
     }
-    if (newPin.length < 4) {
-      setState(() => _error = 'Yeni PIN en az 4 haneli olmalı');
+    if (!VaultService.isValidPin(newPin)) {
+      setState(() => _error = 'Yeni PIN ${VaultService.pinMinLength} ile '
+          '${VaultService.pinMaxLength} hane arasında olmalı');
       return;
     }
     if (newPin != _confirm.text.trim()) {
@@ -443,21 +542,24 @@ class _ChangePinDialogState extends State<_ChangePinDialog> {
               controller: _old,
               obscureText: true,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: VaultService.pinMaxLength,
               decoration: const InputDecoration(labelText: 'Eski PIN'),
             ),
             TextField(
               controller: _new,
               obscureText: true,
               keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(labelText: 'Yeni PIN'),
+              maxLength: VaultService.pinMaxLength,
+              decoration: const InputDecoration(
+                labelText: 'Yeni PIN',
+                helperText: '6-12 hane; 8 hane ve üzeri önerilir',
+              ),
             ),
             TextField(
               controller: _confirm,
               obscureText: true,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: VaultService.pinMaxLength,
               decoration: const InputDecoration(labelText: 'Yeni PIN (tekrar)'),
             ),
             if (_error != null) ...[

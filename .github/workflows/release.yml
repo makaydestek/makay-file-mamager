@@ -1,0 +1,163 @@
+name: Release
+
+# Etiket push'landığında (veya elle tetiklendiğinde) tek fat APK derlenir,
+# SHA256 özeti üretilir, GitHub Release oluşturulur ve eski sürümler silinir.
+# Yerel "Apk Hazırla.bat" ile BİREBİR aynı sözleşmeyi uygular:
+#   - APK/MakayFileManager-<sürüm>.apk + .apk.sha256
+#   - Release adı ve gövdesi BOŞ (GitHub sayfayı etiket + commit mesajından gösterir)
+#   - Yalnızca en güncel sürüm bırakılır
+#
+# Gerekli repository secret'ları (yoksa debug imzasıyla derler ve uyarı verir):
+#   ANDROID_KEYSTORE_BASE64      -> android/app/upload-keystore.jks (base64)
+#   ANDROID_KEYSTORE_PASSWORD    -> store + key parolası
+#   ANDROID_KEY_ALIAS            -> örn. "upload"
+#
+# Tek fat APK bilinçli: --split-per-abi kullanılmaz (kullanıcı gereksinimi).
+
+on:
+  push:
+    tags: ['*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Derle + Yayınla
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Depo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Flutter kur
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Bağımlılıklar
+        run: flutter pub get
+
+      # --- Sürüm: etiket varsa ve pubspec ile tutuyorsa etiket, aksi halde pubspec ---
+      - name: Sürümü belirle
+        id: ver
+        run: |
+          set -euo pipefail
+          PUBSPEC_VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml | tr -d '[:space:]')
+          VERSION="$PUBSPEC_VERSION"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "$PUBSPEC_VERSION" ]; then
+            echo "::warning::Etiket (${GITHUB_REF_NAME}) pubspec.yaml (${PUBSPEC_VERSION}) ile farklı - pubspec esas alındı."
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "APK sürümü: $VERSION"
+
+      # --- Release imzalama anahtarı (secret'lardan; yoksa atlanır) ---
+      - name: Keystore çöz
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 tanımlı değil - APK debug imzasıyla çıkacak (güncelleme dağıtımı çalışmaz)."
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > android/app/upload-keystore.jks
+          {
+            echo "storePassword=${KS_PASS}"
+            echo "keyPassword=${KS_PASS}"
+            echo "keyAlias=${KS_ALIAS:-upload}"
+            echo "storeFile=upload-keystore.jks"
+          } > android/key.properties
+          echo "Keystore hazır (alias: ${KS_ALIAS:-upload})."
+
+      # --- Derleme: tek fat APK ---
+      - name: APK derle
+        run: flutter build apk --release
+
+      - name: APK adlandır + SHA256
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          SRC="build/app/outputs/flutter-apk/app-release.apk"
+          DST="APK/MakayFileManager-${VER}.apk"
+          mkdir -p APK
+          cp "$SRC" "$DST"
+          test -f "$DST"
+          SHA=$(sha256sum "$DST" | cut -d' ' -f1)
+          printf '%s  %s\n' "$SHA" "MakayFileManager-${VER}.apk" > "$DST.sha256"
+          echo "SHA256: $SHA"
+          echo "Boyut: $(du -h "$DST" | cut -f1)"
+
+      - name: APK artifact'ı
+        uses: actions/upload-artifact@v4
+        with:
+          name: MakayFileManager-${{ steps.ver.outputs.version }}
+          path: |
+            APK/*.apk
+            APK/*.apk.sha256
+          retention-days: 14
+
+      # --- GitHub Release (ad + gövde boş; yerel betikle aynı davranış) ---
+      - name: Release oluştur
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          APK="APK/MakayFileManager-${VER}.apk"
+          if gh release view "$VER" >/dev/null 2>&1; then
+            gh release upload "$VER" "$APK" "$APK.sha256" --clobber
+          else
+            gh api -X POST "repos/${REPO}/releases" -f tag_name="$VER"
+            gh release upload "$VER" "$APK" "$APK.sha256"
+          fi
+          ASSETS=$(gh release view "$VER" --json assets --jq '.assets | length')
+          if [ "$ASSETS" -lt 2 ]; then
+            echo "::error::Release oluşturuldu ama asset sayısı ${ASSETS} (<2)."
+            exit 1
+          fi
+          echo "Release doğrulandı (asset: ${ASSETS})."
+
+      - name: Eski sürümleri sil
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          for TAG in $(gh release list --json tagName --jq '.[].tagName'); do
+            if [ "$TAG" != "$VER" ]; then
+              gh release delete "$TAG" --yes --cleanup-tag || true
+            fi
+          done
+          echo "Yalnızca ${VER} bırakıldı."
+
+      - name: Özet
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "### MakayFileManager v${VER}"
+            echo ""
+            echo "- APK: \`APK/MakayFileManager-${VER}.apk\`"
+            echo "- İndirme: https://github.com/${REPO}/releases/tag/${VER}"
+          } >> "$GITHUB_STEP_SUMMARY"

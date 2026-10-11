@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set REPO=makaydestek/makay-file-mamager
+set REPO=makaydestek/makay-file-manager
 set RELEASE_URL=https://github.com/%REPO%/releases/tag/
 
 if not exist "APK" mkdir "APK"

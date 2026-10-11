@@ -45,7 +45,7 @@ class UpdateService {
 
   /// Releases API adresi (JSON).
   static const String releasesUrl =
-      'https://api.github.com/repos/makaydestek/makay-file-mamager/releases/latest';
+      'https://api.github.com/repos/makaydestek/makay-file-manager/releases/latest';
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 

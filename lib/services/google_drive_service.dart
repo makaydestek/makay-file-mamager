@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'cloud/cloud_http_client.dart';
+import 'cloud/cloud_types.dart';
 import 'oauth_service.dart';
 
 /// Google Drive API hata mesajı.
@@ -42,14 +44,14 @@ class DriveFile {
       mimeType.startsWith('application/vnd.google-apps.') && !isFolder;
 
   factory DriveFile.fromJson(Map<String, Object?> json) => DriveFile(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        mimeType: json['mimeType'] as String? ?? '',
-        size: (json['size'] as num?)?.toInt(),
-        modified: json['modifiedTime'] is String
-            ? DateTime.tryParse(json['modifiedTime'] as String)
-            : null,
-      );
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    mimeType: json['mimeType'] as String? ?? '',
+    size: (json['size'] as num?)?.toInt(),
+    modified: json['modifiedTime'] is String
+        ? DateTime.tryParse(json['modifiedTime'] as String)
+        : null,
+  );
 }
 
 /// Bağlı Google Drive hesabı özeti.
@@ -80,10 +82,12 @@ class GoogleDriveService {
   static const _kEmail = 'gdrive_email';
 
   static const _kScope = 'https://www.googleapis.com/auth/drive';
-  static final _authorizeEndpoint =
-      Uri.parse('https://accounts.google.com/o/oauth2/v2/auth');
-  static final _tokenEndpoint =
-      Uri.parse('https://oauth2.googleapis.com/token');
+  static final _authorizeEndpoint = Uri.parse(
+    'https://accounts.google.com/o/oauth2/v2/auth',
+  );
+  static final _tokenEndpoint = Uri.parse(
+    'https://oauth2.googleapis.com/token',
+  );
   static final _apiBase = Uri.parse('https://www.googleapis.com/drive/v3/');
 
   // -------------------------------------------------------------------------
@@ -132,7 +136,8 @@ class GoogleDriveService {
     final id = (clientID ?? await clientId())?.trim();
     if (id == null || id.isEmpty) {
       throw const DriveException(
-          'Google Drive client ID gerekli — Ayarlar > Google Drive bölümünden ücretsiz oluşturup yapıştırın.');
+        'Google Drive client ID gerekli — Ayarlar > Google Drive bölümünden ücretsiz oluşturup yapıştırın.',
+      );
     }
     if (clientID != null && clientID.trim().isNotEmpty) {
       await setClientId(clientID);
@@ -140,19 +145,21 @@ class GoogleDriveService {
 
     final session = await OAuthService.authorize(
       buildAuthorizeUrl: (redirectUri, state, challenge) =>
-          _authorizeEndpoint.replace(queryParameters: {
-        'client_id': id,
-        'redirect_uri': redirectUri,
-        'response_type': 'code',
-        'scope': _kScope,
-        'state': state,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-        'access_type': 'offline',
-        'prompt': 'consent',
-        'include_granted_scopes': 'true',
-        'hl': 'tr',
-      }),
+          _authorizeEndpoint.replace(
+            queryParameters: {
+              'client_id': id,
+              'redirect_uri': redirectUri,
+              'response_type': 'code',
+              'scope': _kScope,
+              'state': state,
+              'code_challenge': challenge,
+              'code_challenge_method': 'S256',
+              'access_type': 'offline',
+              'prompt': 'consent',
+              'include_granted_scopes': 'true',
+              'hl': 'tr',
+            },
+          ),
       exchangeCode: (code, redirectUri, verifier) =>
           _exchange(id, code, redirectUri, verifier),
     );
@@ -165,38 +172,27 @@ class GoogleDriveService {
     String code,
     String redirectUri,
     String verifier,
-  ) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
-    try {
-      final req = await client.postUrl(_tokenEndpoint);
-      req.headers.contentType =
-          ContentType('application', 'x-www-form-urlencoded');
-      req.write(
-        'grant_type=authorization_code'
-        '&code=${Uri.encodeQueryComponent(code)}'
-        '&redirect_uri=${Uri.encodeQueryComponent(redirectUri)}'
-        '&client_id=${Uri.encodeQueryComponent(clientId)}'
-        '&code_verifier=${Uri.encodeQueryComponent(verifier)}',
-      );
-      final resp = await req.close();
-      final body = await resp.transform(utf8.decoder).join();
-      if (resp.statusCode != 200) {
-        throw DriveException('Google reddetti (${resp.statusCode}): '
-            '${_errorOf(body)}');
-      }
-      final map = jsonDecode(body) as Map<String, Object?>;
-      final access = map['access_token'] as String?;
-      if (access == null) throw const DriveException('Token alınamadı');
-      return OAuthSession(
-        accessToken: access,
-        refreshToken: map['refresh_token'] as String?,
-        expiresAt: DateTime.now().add(
-          Duration(seconds: ((map['expires_in'] as num?)?.toInt() ?? 3600)),
-        ),
-      );
-    } finally {
-      client.close(force: true);
-    }
+  ) {
+    return CloudHttpClient.exchangeCode(
+      tokenEndpoint: _tokenEndpoint,
+      clientId: clientId,
+      code: code,
+      redirectUri: redirectUri,
+      verifier: verifier,
+      errorOf: (status, body) => 'Google reddetti ($status): ${_errorOf(body)}',
+      parse: (body) {
+        final map = jsonDecode(body) as Map<String, Object?>;
+        final access = map['access_token'] as String?;
+        if (access == null) throw const DriveException('Token alınamadı');
+        return OAuthSession(
+          accessToken: access,
+          refreshToken: map['refresh_token'] as String?,
+          expiresAt: DateTime.now().add(
+            Duration(seconds: ((map['expires_in'] as num?)?.toInt() ?? 3600)),
+          ),
+        );
+      },
+    );
   }
 
   static Future<void> _saveSession(OAuthSession session) async {
@@ -215,8 +211,9 @@ class GoogleDriveService {
   static Future<String> _token() async {
     final prefs = await SharedPreferences.getInstance();
     final access = prefs.getString(_kAccess);
-    final expiry =
-        DateTime.fromMillisecondsSinceEpoch(prefs.getInt(_kExpiry) ?? 0);
+    final expiry = DateTime.fromMillisecondsSinceEpoch(
+      prefs.getInt(_kExpiry) ?? 0,
+    );
     if (access != null &&
         DateTime.now().isBefore(expiry.subtract(const Duration(seconds: 90)))) {
       return access;
@@ -242,9 +239,12 @@ class GoogleDriveService {
   /// Hesap bilgisi + kota (başlıkta gösterilir).
   static Future<DriveAccount> account() async {
     final data = await _json(
-      _apiBase.replace(path: '${_apiBase.path}about', queryParameters: {
-        'fields': 'user(emailAddress,displayName),quotaBytes,usageBytes',
-      }),
+      _apiBase.replace(
+        path: '${_apiBase.path}about',
+        queryParameters: {
+          'fields': 'user(emailAddress,displayName),quotaBytes,usageBytes',
+        },
+      ),
     );
     final user = data['user'] as Map<String, Object?>?;
     final email = user?['emailAddress'] as String? ?? '';
@@ -264,12 +264,15 @@ class GoogleDriveService {
     final q =
         "'${folderId.replaceAll("'", r"\'")}' in parents and trashed = false";
     final data = await _json(
-      _apiBase.replace(path: '${_apiBase.path}files', queryParameters: {
-        'q': q,
-        'fields': 'files(id,name,mimeType,size,modifiedTime)',
-        'orderBy': 'folder,name',
-        'pageSize': '1000',
-      }),
+      _apiBase.replace(
+        path: '${_apiBase.path}files',
+        queryParameters: {
+          'q': q,
+          'fields': 'files(id,name,mimeType,size,modifiedTime)',
+          'orderBy': 'folder,name',
+          'pageSize': '1000',
+        },
+      ),
     );
     final files = data['files'];
     if (files is! List) return const [];
@@ -314,7 +317,8 @@ class GoogleDriveService {
       'mimeType': mime,
     });
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 30);
     try {
       final req = await client.postUrl(
         _apiBase.replace(
@@ -331,11 +335,15 @@ class GoogleDriveService {
           'multipart/related; boundary=$boundary',
         );
       req
-        ..write('--$boundary\r\n'
-            'Content-Type: application/json; charset=UTF-8\r\n\r\n'
-            '$meta\r\n')
-        ..write('--$boundary\r\n'
-            'Content-Type: $mime\r\n\r\n');
+        ..write(
+          '--$boundary\r\n'
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n'
+          '$meta\r\n',
+        )
+        ..write(
+          '--$boundary\r\n'
+          'Content-Type: $mime\r\n\r\n',
+        );
 
       final stream = source.openRead();
       var sent = 0;
@@ -350,7 +358,8 @@ class GoogleDriveService {
       final body = await resp.transform(utf8.decoder).join();
       if (resp.statusCode != 200) {
         throw DriveException(
-            'Yükleme başarısız (${resp.statusCode}): ${_errorOf(body)}');
+          'Yükleme başarısız (${resp.statusCode}): ${_errorOf(body)}',
+        );
       }
     } finally {
       client.close(force: true);
@@ -389,7 +398,8 @@ class GoogleDriveService {
     Map<String, Object?>? body,
   }) async {
     final token = await _token();
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 30);
     try {
       final req = await client.openUrl(method, uri);
       req.headers
@@ -400,7 +410,8 @@ class GoogleDriveService {
       final text = await resp.transform(utf8.decoder).join();
       if (resp.statusCode >= 400) {
         throw DriveException(
-            'Google Drive hatası (${resp.statusCode}): ${_errorOf(text)}');
+          'Google Drive hatası (${resp.statusCode}): ${_errorOf(text)}',
+        );
       }
       if (text.isEmpty) return const {};
       return jsonDecode(text) as Map<String, Object?>;
@@ -415,7 +426,8 @@ class GoogleDriveService {
     void Function(int received, int? total)? onProgress,
   }) async {
     final token = await _token();
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 30);
     try {
       final req = await client.getUrl(uri);
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -423,10 +435,12 @@ class GoogleDriveService {
       if (resp.statusCode != 200) {
         final text = await resp.transform(utf8.decoder).join();
         throw DriveException(
-            'İndirme başarısız (${resp.statusCode}): ${_errorOf(text)}');
+          'İndirme başarısız (${resp.statusCode}): ${_errorOf(text)}',
+        );
       }
       final total = int.tryParse(
-          resp.headers.value(HttpHeaders.contentLengthHeader) ?? '');
+        resp.headers.value(HttpHeaders.contentLengthHeader) ?? '',
+      );
       var received = 0;
       final sink = target.openWrite();
       try {
@@ -466,34 +480,5 @@ class GoogleDriveService {
 
   /// Basit uzantı → MIME eşlemesi (yüklemede kullanılır).
   @visibleForTesting
-  static String mimeOf(String name) {
-    final ext =
-        name.contains('.') ? name.split('.').last.toLowerCase() : '';
-    return switch (ext) {
-      'png' => 'image/png',
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'gif' => 'image/gif',
-      'webp' => 'image/webp',
-      'bmp' => 'image/bmp',
-      'mp4' => 'video/mp4',
-      'mkv' => 'video/x-matroska',
-      'mov' => 'video/quicktime',
-      'mp3' => 'audio/mpeg',
-      'm4a' => 'audio/mp4',
-      'wav' => 'audio/wav',
-      'pdf' => 'application/pdf',
-      'txt' => 'text/plain',
-      'csv' => 'text/csv',
-      'zip' => 'application/zip',
-      'rar' => 'application/vnd.rar',
-      'apk' => 'application/vnd.android.package-archive',
-      'doc' => 'application/msword',
-      'docx' =>
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'xls' => 'application/vnd.ms-excel',
-      'xlsx' =>
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      _ => 'application/octet-stream',
-    };
-  }
+  static String mimeOf(String name) => cloudMimeOf(name);
 }

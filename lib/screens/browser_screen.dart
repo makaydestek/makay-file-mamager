@@ -6,13 +6,17 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/file_entry.dart';
 import '../providers/settings_provider.dart';
+import '../services/archive_service.dart';
 import '../services/clipboard_manager.dart';
 import '../services/file_service.dart';
 import '../services/recycle_bin_service.dart';
 import '../services/root_service.dart';
+import '../services/transfer.dart';
 import '../services/vault_service.dart';
 import '../utils/formats.dart';
 import '../widgets/folder_tree_panel.dart';
+import '../widgets/transfer_progress_dialog.dart';
+import 'archive_screen.dart';
 import 'hex_viewer_screen.dart';
 import 'image_viewer_screen.dart';
 import 'media_viewer_screen.dart';
@@ -164,6 +168,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final ext = e.name.contains('.')
         ? e.name.split('.').last.toLowerCase()
         : '';
+    if (ArchiveService.isArchive(e.name)) {
+      // ZIP/TAR/GZ arşivleri arşiv görüntüleyicide açılır.
+      _openArchive(e);
+      return;
+    }
     if (kImageExts.contains(ext)) {
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -203,6 +212,56 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  /// Arşiv dosyasını arşiv görüntüleyici ekranında açar.
+  void _openArchive(FileEntry e) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ArchiveScreen(archivePath: e.path),
+      ),
+    );
+  }
+
+  /// Seçili öğeleri (tek tek dosyalar ve klasör alt ağaçlarıyla) bu klasöre
+  /// ZIP arşivi olarak yazar ve listeyi tazeler.
+  Future<void> _compressToZip(List<FileEntry> entries) async {
+    if (entries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sıkıştırılacak öğe seçin')),
+      );
+      return;
+    }
+    final outPath = ArchiveService.suggestedZipPath(_path, entries.first.name);
+    try {
+      final count = await ArchiveService().createZip(
+        sourcePaths: [for (final e in entries) e.path],
+        outPath: outPath,
+      );
+      if (!mounted) return;
+      setState(_selected.clear);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Arşiv oluşturuldu: ${outPath.split(Platform.pathSeparator).last}'
+              ' ($count dosya)'),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Arşiv oluşturulamadı: $err')),
+      );
+    }
+  }
+
+  /// Seçim modundaki tüm öğeleri ZIP'e ekler.
+  Future<void> _compressSelected() async {
+    final entries =
+        _entries.where((e) => _selected.contains(e.path)).toList();
+    await _compressToZip(entries);
+  }
+
   /// Satır menüsü: bilgi, metin/hex/SQLite açma, kasaya taşıma.
   void _rowMenu(FileEntry e) {
     final ext = e.name.contains('.') ? e.name.split('.').last.toLowerCase() : '';
@@ -219,6 +278,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _showInfo(e);
+              },
+            ),
+            if (!e.isDirectory && ArchiveService.isArchive(e.name))
+              ListTile(
+                leading: const Icon(Icons.folder_zip_outlined),
+                title: const Text('Arşivi görüntüle'),
+                subtitle: const Text('İçeriği gezin, çıkar'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openArchive(e);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.archive_outlined),
+              title: const Text('Buraya sıkıştır'),
+              subtitle: const Text('ZIP arşivi oluşturur'),
+              onTap: () {
+                Navigator.pop(context);
+                _compressToZip([e]);
               },
             ),
             if (!e.isDirectory && kTextExts.contains(ext))
@@ -395,18 +473,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
       );
       return;
     }
+    final name = filePath.split(Platform.pathSeparator).last;
     try {
-      await _service.copyPath(filePath, targetFolder);
+      await showTransferProgress(
+        context,
+        title: 'Kopyalanıyor',
+        action: (onProgress, token) => _service.copyPath(
+          filePath,
+          targetFolder,
+          onProgress: onProgress,
+          cancelToken: token,
+        ),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              '${File(filePath).path.split(Platform.pathSeparator).last} '
-              'kopyalandı → $targetFolder'),
-        ),
+        SnackBar(content: Text('$name kopyalandı → $targetFolder')),
       );
       // Hedef bu ekrandaysa liste tazelenir.
       if (targetFolder == _path && mounted) _load();
+    } on TransferCancelled {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$name kopyalaması iptal edildi')),
+      );
     } catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -433,26 +522,116 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
+  /// Panodaki öğeleri bu klasöre yapıştırır.
+  ///
+  /// Tüm öğeler **tek bir** ilerleme diyaloğu altında yürür: önce
+  /// [FileService.estimate] ile genel toplam alınır, her öğenin ilerlemesi
+  /// tamamlananlara eklenerek global olarak monoton bir çubuk sunulur.
   Future<void> _paste() async {
     final clipboard = ClipboardManager.instance;
     if (clipboard.isEmpty) return;
     final target = _path;
-    for (final entry in clipboard.entries) {
-      try {
-        if (clipboard.isCut) {
-          await _service.moveEntry(entry, target);
-        } else {
-          await _service.copyEntry(entry, target);
-        }
-      } catch (_) {}
+    final isCut = clipboard.isCut;
+    final entries = List<FileEntry>.of(clipboard.entries);
+
+    final total = await _service.estimate([for (final e in entries) e.path]);
+    if (!mounted) return;
+
+    var doneFiles = 0;
+
+    try {
+      await showTransferProgress(
+        context,
+        title: isCut ? 'Taşınıyor' : 'Kopyalanıyor',
+        action: (onProgress, token) => _pasteAll(
+          entries: entries,
+          target: target,
+          isCut: isCut,
+          total: total,
+          onProgress: onProgress,
+          token: token,
+          onStep: (files) => doneFiles = files,
+        ),
+      );
+    } on TransferCancelled {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('İşlem iptal edildi')),
+      );
+      _load();
+      return;
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Yapıştırılamadı: $err')),
+      );
+      return;
     }
-    if (clipboard.isCut) clipboard.clear();
+
+    if (isCut) clipboard.clear();
     if (mounted) {
       _load();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Yapıştırıldı: ${clipboard.entries.length} öğe')),
+        SnackBar(content: Text(
+            'Yapıştırıldı: ${entries.length} öğe'
+            '${doneFiles > 0 ? ' ($doneFiles dosya)' : ''}')),
       );
     }
+  }
+
+  /// Panodaki her öğeyi sırayla taşır/kopyalar ve genel toplamı raporlar.
+  Future<TransferResult> _pasteAll({
+    required List<FileEntry> entries,
+    required String target,
+    required bool isCut,
+    required ({int files, int bytes}) total,
+    required void Function(TransferProgress) onProgress,
+    required CancelToken token,
+    required void Function(int files) onStep,
+  }) async {
+    var files = 0;
+    var bytes = 0;
+    for (final entry in entries) {
+      final result = isCut
+          ? await _service.moveEntry(
+              entry,
+              target,
+              cancelToken: token,
+              onProgress: (p) => onProgress(TransferProgress(
+                phase: p.phase,
+                doneFiles: files + p.doneFiles,
+                doneBytes: bytes + p.doneBytes,
+                totalFiles: total.files,
+                totalBytes: total.bytes,
+                currentPath: p.currentPath,
+              )),
+            )
+          : await _service.copyEntry(
+              entry,
+              target,
+              cancelToken: token,
+              onProgress: (p) => onProgress(TransferProgress(
+                phase: p.phase,
+                doneFiles: files + p.doneFiles,
+                doneBytes: bytes + p.doneBytes,
+                totalFiles: total.files,
+                totalBytes: total.bytes,
+                currentPath: p.currentPath,
+              )),
+            );
+      files += result.files;
+      bytes += result.bytes;
+      onStep(files);
+      // Öğe bitimi: çubuk öğeler arası boşlukta da ilerlesin.
+      onProgress(TransferProgress(
+        phase: TransferPhase.copying,
+        doneFiles: files,
+        doneBytes: bytes,
+        totalFiles: total.files,
+        totalBytes: total.bytes,
+      ));
+    }
+    return TransferResult(files: files, bytes: bytes, cancelled: false);
   }
 
   Future<void> _deleteSelected() async {
@@ -555,8 +734,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (mounted) _load();
   }
 
-  void _showInfo(FileEntry e) {
+  void _showInfo(FileEntry e) async {
     final datePattern = context.read<SettingsProvider>().datePattern;
+    // Klasörün "boyut" alanı dosya girdisinin kendisine ait değildir; gerçek
+    // özyinelemeli boyut (içindeki dosyaların toplamı) ayrıca hesaplanır.
+    String? folderSize;
+    if (e.isDirectory) {
+      folderSize = Formats.size(await _service.directorySize(e.path));
+      if (!mounted) return;
+    }
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -566,7 +752,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Tür: ${e.kind.name}'),
-            Text('Boyut: ${Formats.size(e.size)}'),
+            Text('Boyut: ${folderSize ?? Formats.size(e.size)}'),
             Text(
                 'Değiştirilme: ${Formats.date(e.modified, pattern: datePattern)}'),
             if (_permissionText(e.path) != null)
@@ -735,6 +921,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
               icon: const Icon(Icons.share_rounded),
               onPressed: _shareSelected,
               tooltip: 'Paylaş',
+            ),
+            IconButton(
+              icon: const Icon(Icons.archive_outlined),
+              onPressed: _compressSelected,
+              tooltip: 'Arşive ekle',
             ),
             IconButton(
               icon: const Icon(Icons.drive_file_rename_outline_rounded),

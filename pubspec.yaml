@@ -52,6 +52,7 @@ dependencies:
   dynamic_color: ^2.1.0
   sqlite3: ^2.4.0
   pointycastle: ^4.0.0
+  archive: ^4.5.0
 
 dev_dependencies:
   flutter_test:

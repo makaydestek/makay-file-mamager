@@ -172,7 +172,9 @@
       çıkar
 - [x] **Paket adı**: `applicationId = com.makay.filemanager` (uygulama ADI
       manifestte "Makay Dosya Yöneticisi" — ikisi farklı alanlar)
-- [x] **Git deposu**: `https://github.com/makaydestek/makay-file-mamager`
+- [x] **Git deposu**: `https://github.com/makaydestek/makay-file-manager`
+      (2026-10'da `makay-file-mamager` yazım hatası düzeltildi; GitHub eski
+      adı kalıcı olarak yönlendirir, kurulu uygulamalar etkilenmez)
       (main) — ilk commit + uzak; `.gitignore` ile keystore ve sürüm
       APK'ları koruma altında, yalnızca güncelleme üçlüsü yayılır
 - [x] **Otomatik güncelleme** (`UpdateService` + `update_dialog`):
@@ -342,9 +344,11 @@ eksik bulunan "ayırt edici" özelliklerin tamamı, öncelik sırasına göre ek
       olarak doğrulanır ve yol tırnak kaçışı yapılır
 
 **Kasa (gizli klasör)**
-- [x] `VaultService` — PIN'den **PBKDF2-HMAC-SHA256** (20.000 tur) ile anahtar,
+- [x] `VaultService` — PIN'den **PBKDF2-HMAC-SHA256** ile anahtar,
       **AES-256-GCM** dosya şifreleme (12 bayt nonce + 16 bayt etiket); meta
       SharedPreferences'ta, dosyalar uygulama özel dizininde `.enc`
+      (tur sayısı meta'da sürüm olarak saklanır: yeni kasalar **200.000**,
+      1.0.10 ve öncesi kasalar 20.000 ile açılmaya devam eder)
 - [x] `VaultScreen` — PIN oluşturma / kilit açma / açık kasa listesi,
       dışa aktarma (Download/Kasa), onaylı silme, PIN değiştirme ve sıfırlama
 - [x] Tarayıcı satır menüsünde **"Kasaya taşı"** (kaynak dosya yerinde kalır,
@@ -372,6 +376,102 @@ eksik bulunan "ayırt edici" özelliklerin tamamı, öncelik sırasına göre ek
 `treemap_view_test`, `vault_service_test`, `vault_screen_test`,
 `cloud_providers_test` (ağsız), `root_service_test`, `viewer_screens_test`;
 `widget_test` kaydırmalı doğrulamaya geçirildi. Analiz temiz, testler **110/110**.
+
+### A21 — Kıyaslama Sonrası Teknik Sağlamlaştırma (Sürüm 1.0.11) ✅
+A20'deki özellik ekleme turundan sonra sıra **projenin sürdürülebilirliğine**
+geldi: yayın zinciri tek bilgisayardan kurtarıldı, kasa güvenliği sertleştirildi,
+kod tekrarı azaltıldı ve uzun dosya işlemlerine ilerleme/iptal eklendi.
+
+**Yayın altyapısı**
+- [x] **GitHub Actions CI**: `.github/workflows/ci.yml` — her push/PR'da
+      `flutter analyze` + `flutter test`. Release'in yalnızca yerel
+      `Apk Hazırla.bat`'tan yapılabildiği riski kırıldı.
+- [x] **GitHub Actions Release**: `.github/workflows/release.yml` — etiket
+      push'ında (veya elle) tek fat APK derler, adlandırır, SHA256 üretir,
+      release'i **boş ad/açıklama** ile açar ve eski sürümleri siler; yani
+      yerel betikle **aynı sözleşmeyi** uygular. Sürüm `pubspec.yaml`'dan
+      okunur (etiket çelişirse pubspec esas + uyarı).
+- [x] İmza anahtarı repo **secret**'larından çözülür
+      (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` /
+      `ANDROID_KEY_ALIAS`); secret yoksa bilgilendirme ile debug imzasına düşer.
+- [x] **Keystore yedekleme rehberi**: `docs/KEYSTORE YEDEKLEME.md` — SHA256
+      özeti, 3 farklı yere yedek kuralı, geri yükleme adımları. `.gitignore`
+      doğrulandı (`*.jks`, `*.keystore`, `android/key.properties`).
+- [x] **Depo adı yazımı düzeltildi**: `makay-file-mamager` →
+      **`makay-file-manager`**; GitHub eski adı kalıcı yönlendirir (kurulu
+      uygulamalar etkilenmez), `Apk Hazırla.bat` ve `UpdateService` URL'leri,
+      README ve yol haritası güncellendi.
+- [x] **Cihaz test matrisi**: `docs/CIHAZ TEST MATRISI.md` — 12 bölüm / ~80
+      adım; otomasyonun kapsayamadığı izin, OTG/SD, root, ağ, performans ve
+      güncelleme akışları 5 cihaz sınıfında koşulur.
+
+**Kasa (gizli klasör) sertleştirilmesi**
+- [x] **PBKDF2 tur sayısı 20.000 → 200.000** (yeni kasa/PIN). Tur sayısı
+      artığı **meta veride saklanır**; 1.0.10 ve öncesi kasalar 20.000 ile
+      açılmaya devam eder (geriye uyumluluk testi ile kanıtlandı).
+- [x] **PIN uzunluğu 6–12 hane** (eski 6 haneli PIN'ler geçerli, unlock
+      uzunluk doğrulaması yapmaz — 4 haneli eski kasalar bile açılır).
+- [x] **Kilitlenme + üstel geri çekilme**: 0 → 5 → 15 → 60 → 300 → **1800 sn**
+      tavan; `vault_lockout` prefs anahtarıyla kalıcı, sayım başarıda sıfırlanır.
+      Arayüzde saniye saniye geri sayım ve **devre dışı KİLİT AÇ** butonu;
+      saate enjeksiyon (`VaultService.now`) ile test edilebilir.
+
+**Kod tekrarı ve yapı**
+- [x] **Bulut ekranı bölündü**: `cloud_screen.dart` **1.592 → 276 satır**;
+      `cloud_add_dialog`, `cloud_oauth_browse_screen`,
+      `cloud_webdav_browse_screen`, `cloud_common`, `cloud_utils` olarak ayrıldı.
+- [x] **Ortak OAuth/HTTP katmanı**: `services/cloud/cloud_types.dart`,
+      `cloud_http_client.dart`, `cloud_oauth_flow.dart` — PKCE, kod değişimi,
+      jeton yenileme, 401/403 → yenile → tekrar dene, Türkçe hata çevirisi
+      artık tek yerde. Sağlayıcı başına kod **2.154 → 1.327 satır (−827)**.
+- [x] Google Drive davranışı **bit bit korundu** (prefs anahtarları,
+      `DriveException`, `http://127.0.0.1:<port>/callback` akışı); sayfalama
+      döngüleri (Drive `q=`, Dropbox imleç, Box offset) bilinçli olarak
+      sağlayıcıda bırakıldı — ortak soyutlama okunurluğu azaltırdı.
+
+**Arşivler (ZIP / TAR / GZ)**
+- [x] **`ArchiveService`** (`archive` 4.x): `.zip`, `.tar`, `.gz`, `.tgz`,
+      `.tar.gz` okuma; `.zip`/`.tar` oluşturma. ZIP disk tabanlı
+      (`InputFileStream`/`OutputFileStream`) — bellek tüm arşivi yüklemez;
+      tar.gz tek geçişte akış (`decodeLazy`), geçici dosya yok.
+- [x] **Zip-Slip (path traversal) koruması**: mutlak yol ve `..` içeren
+      girdiler reddedilir; sözdizimsel normalizasyon + en derin mevcut
+      atasının `resolveSymbolicLinks` denetimi ile **sembolik bağlantı
+      kaçışı** da engellenir. Sembolik bağlantı girdisi hiç oluşturulmaz.
+      İhlalde hiçbir şey yazılmadan `ArchiveSecurityException` fırlatılır.
+- [x] **Dürüst hata durumları**: kütüphane `.zip` uzantılı sahte dosyayı
+      sessizce boş arşive çeviriyor → EOCD (`PK\x05\x06`) imzası
+      önden denetimi eklendi. RAR/7z için "desteklenmez" mesajı.
+- [x] **`ArchiveScreen`**: arşiv içi klasör ağacı (sentetik klasörlerle),
+      dosya bazlı "Buraya çıkar" / "Dışa aktar-Paylaş" / "Bilgiler",
+      "TÜMÜNÜ ÇIKAR" ilerleme diyaloğu + dosya/bayt özeti; bozuk arşivde
+      anlaşılır hata ekranı.
+- [x] **Tarayıcı entegrasyonu**: arşiv dosyasına dokununca arşiv ekranı
+      açılır; satır menüsünde "Arşivi görüntüle"; herhangi bir dosya/klasör
+      için **"Buraya sıkıştır"** (geçerli dizine ZIP) ve seçim modunda
+      **"Arşive ekle"**.
+
+**Uzun dosya işlemleri**
+- [x] **İlerleme + iptal**: `transfer.dart` (`CancelToken`,
+      `TransferProgress`, `TransferResult`) ve `FileService`'e
+      `onProgress`/`cancelToken`; 256 KB'lık parçalı kopyalama (bellek sabit,
+      iptal mümkün), 100 ms'lik bildirim hız sınırı, ölçüm fazı,
+      `estimate()` ile "X dosya, Y GB" onayı.
+- [x] **İptalde kısmi çıktı temizlenir** — ancak hedef **önceden varsa asla
+      silinmez** (kullanıcı verisi korunur).
+- [x] **`showTransferProgress`** diyaloğu: belirsiz ölçüm çubuğu, dosya/bayt
+      sayacı, "İptal ediliyor…", hata ekranı; iptal `TransferCancelled`
+      fırlatır, hata **yeniden fırlatılır**.
+- [x] **HATA DÜZELTMESİ (önceden var)**: iç içe kopyalamada alt klasör adı
+      `uri.pathSegments`'ten alınıyordu — `Directory.uri` sonuna `/` eklediği
+      için son segment **boş** geliyordu ve tüm dosyalar düz klasöre
+      iniyordu. A19'da `listDirectory` için düzeltildi, bu turda `_copyDir`
+      da yol tabanlı ad çıkarmaya geçirildi.
+
+**Testler**: `archive_service_test` (24), `archive_screen_test` (4),
+`file_transfer_test` (14), `transfer_progress_dialog_test` (5),
+`vault_service_test` (14), `vault_screen_test` (3),
+`cloud_providers_test` (19) — analiz temiz, tam paket **167/167**.
 
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`

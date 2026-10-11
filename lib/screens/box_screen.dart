@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/box_service.dart';
-import 'cloud_screen.dart';
+import 'cloud_oauth_browse_screen.dart';
 
 /// Box gezinme ekranı.
 ///

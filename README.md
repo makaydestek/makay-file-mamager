@@ -33,12 +33,14 @@ tüm özellikler her kullanıcıya açıktır:
 | Metin editörü | Düz metin dosyalarını görüntüleme, düzenleyip kaydetme |
 | Hex görüntüleyici | Dosyaları offset + hex + ASCII olarak bayt bayt görüntüleme |
 | SQLite görüntüleyici | `.db` dosyalarında tablo ve satırları salt okunur görüntüleme |
-| Kasa (gizli klasör) | PIN ile korunan AES-256-GCM şifreli dosya kasası; kasaya taşıma |
+| Kasa (gizli klasör) | PIN ile korunan AES-256-GCM şifreli dosya kasası; kasaya taşıma, 6–12 hane PIN, kilitlenme geri sayımı |
 | Dropbox / OneDrive / Box | Tarayıcı OAuth2 (PKCE) ile bağlanma; gezinme, indirme, yükleme |
 | USB / SD kart | Bağlı çıkarılabilir birimleri algılama ve tarayıcıyla açma |
 | APK yedekleme | Yüklü uygulamaların kurulum APK'sını Download klasörüne kopyalama |
 | Material You | Android 12+ sistem (dinamik) rengi; ayarlar'dan kapatılabilir |
 | Kök izinleri (chmod) | Root'lu cihazlarda dosya izinlerini değiştirme; her dosyada izin gösterimi |
+| İlerleme ve iptal | Kopyala/taşı için ölçülmüş ilerleme çubuğu, iptal ve kısmi çıktının temizlenmesi |
+| Arşivler | `.zip`/`.tar`/`.gz` açma, gezinme, çıkarma; ZIP/TAR oluşturma; Zip-Slip koruması |
 
 ## Ekranlar (referans ekranlardan)
 
@@ -64,7 +66,8 @@ tüm özellikler her kullanıcıya açıktır:
 10. **Geçici Dosyalar** — önbellek/.tmp temizliği + **mükerrer dosya taraması**
 11. **Kasa** — PIN oluşturma/kilit açma, şifreli dosya listesi, dışa aktarma, silme
 12. **USB / SD Kart** — bağlı harici birimlerin listesi ve gezinme
-13. **Metin Editörü / Hex / SQLite** — dosya türüne göre açılan görüntüleyiciler
+13. **Metin Editörü / Hex / SQLite / Arşiv** — dosya türüne göre açılan
+    görüntüleyiciler ve arşiv gezginicisi
 14. **Ayarlar** — dosya boyutu birimi, tarih biçimi, **görünüm stili**,
     **Material You**, **Kasa/USB/Mükerrer** kısayolları, gelişmiş ayarlar,
     geri dönüşüm kutusu ayarları, bildirimler, tema (açık/koyu/sistem), izinler
@@ -91,11 +94,16 @@ Ayrıntılar: [docs/YOL_HARITASI.md](docs/YOL_HARITASI.md)
   tespiti, treemap, çift panel sürükle-bırak, metin editörü, hex/SQLite
   görüntüleyici, chmod, kasa (PIN + AES-256-GCM), Dropbox/OneDrive/Box,
   USB/SD algılama, APK yedekleme, Material You
+- **A21** — teknik sağlamlaştırma: GitHub Actions CI + Release, keystore
+  yedekleme rehberi, kasa sertleştirilmesi (200.000 PBKDF2 turu, 6–12 hane PIN,
+  kilitlenme geri sayımı), bulut ekranının bölünüp ortak OAuth/HTTP katmanına
+  taşınması, kopyala/taşı için ilerleme + iptal, iç içe kopyalama hatasının
+  düzeltilmesi, cihaz test matrisi
 
 ## Otomatik Güncelleme
 
 Uygulama **her açılışında** GitHub **Releases** sayfasını
-(`github.com/makaydestek/makay-file-mamager/releases`) sorgular
+(`github.com/makaydestek/makay-file-manager/releases`) sorgular
 (`releases/latest` API'si). Release etiketi kurulu sürümden **yeni**yse
 indirme diyaloğu açılır. Release'deki `.apk` asset'i indirilir ve
 **yanındaki `.apk.sha256` asset'iyle zorunlu SHA256 doğrulaması**
@@ -113,6 +121,39 @@ gösterir. Release oluşturulduğunda **eski sürümler otomatik silinir**
 `APK` klasöründeki eski sürüm dosyaları da temizlenir.
 APK dosyaları git'e girmez (`APK/` yok sayılır) — dağıtım tamamen
 Release üzerinden yapılır, depo hafif kalır.
+
+## CI/CD (GitHub Actions)
+
+Yayın zincirinin tek bilgisayara bağımlılığı iki workflow ile kırıldı:
+
+| Workflow | Dosya | Tetikleyici | Ne yapar |
+|---|---|---|---|
+| **CI** | `.github/workflows/ci.yml` | `main`'e push, PR | `flutter pub get` → `flutter analyze` → `flutter test` |
+| **Release** | `.github/workflows/release.yml` | `*.*.*` etiketi veya elle tetikleme | tek fat APK derle → adlandır → SHA256 → Release oluştur → eski sürümleri sil |
+
+Release workflow, yerel `Apk Hazırla.bat` ile **aynı sözleşmeyi** uygular:
+`APK/MakayFileManager-<sürüm>.apk` + `.apk.sha256`, release başlığı/açıklaması
+boş, yalnızca en güncel sürüm bırakılır. Sürüm `pubspec.yaml`'dan okunur;
+etiket pubspec ile çelişiyorsa pubspec esas alınır ve uyarı verilir.
+
+**Release imzalama anahtarı** repo secret'larından çözülür (depoğa asla girmez):
+
+| Secret | İçerik |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `android/app/upload-keystore.jks` dosyasının base64 kodlaması |
+| `ANDROID_KEYSTORE_PASSWORD` | store + key parolası |
+| `ANDROID_KEY_ALIAS` | örn. `upload` |
+
+Oluşturma:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("android\app\upload-keystore.jks"))
+# çıktıyı ANDROID_KEYSTORE_BASE64 secret'ına yapıştırın
+```
+
+Secret yoksa workflow **debug imzasıyla** derleyip uyarı verir — bu durumda
+APK kurulur ama **güncelleme dağıtılamaz**, bu yüzden secret'lar zorunludur.
+Keystore kaybı senaryosu ve yedekleme adımları: `docs/KEYSTORE YEDEKLEME.md`.
 
 ## Çalıştırma
 

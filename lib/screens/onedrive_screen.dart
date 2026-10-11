@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/onedrive_service.dart';
-import 'cloud_screen.dart';
+import 'cloud_oauth_browse_screen.dart';
 
 /// OneDrive (Microsoft Graph) gezinme ekranı.
 ///

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/dropbox_service.dart';
-import 'cloud_screen.dart';
+import 'cloud_oauth_browse_screen.dart';
 
 /// Dropbox gezinme ekranı.
 ///
