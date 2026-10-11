@@ -20,47 +20,27 @@ void main() {
         .writeAsStringSync('merhaba makay');
     Directory('${root.path}${Platform.pathSeparator}klasor').createSync();
 
-    // Port seçimi yarışa açıktır ve bu test CI'da flaky idi. İki hata vardı:
+    // Port **0** verilir: işletim sistemi gerçekten boş olan iki portu tahsis
+    // eder ve gerçek değerler `boundPort` / `boundTlsPort` okunur.
     //
-    //  1. Port arayüzü uyuşmazlığı: port `loopbackIPv4` üzerinde aranıp
-    //     sunucu `anyIPv4`'e bağlanıyordu — loopback'te boş olan bir port
-    //     başka bir arayüzde dolu olabiliyor ("Address already in use").
-    //  2. Aynı port iki kez seçilebiliyordu: TLS portu, kontrol portunun
-    //     soketi kapatıldıktan sonra aranıyordu; işletim sistemi az önce
-    //     boşalan portu geri verebiliyordu.
-    //
-    // Çözüm: iki port da soketler **açıkken** (aynı anda) aranır, böylece
-    // birbirinden ayrışırlar; ayrıca her ikisi de sunucunun bağlandığı
-    // `anyIPv4` arayüzünde aranır ve başlangıç birkaç portla tekrar denenir.
-    Object? lastError;
-    for (var attempt = 0; attempt < 6; attempt++) {
-      final probe = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
-      final probeTls = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
-      port = probe.port;
-      final tlsPort = probeTls.port;
-      await probe.close();
-      await probeTls.close();
-
-      server = MiniFtpServer(
-        rootPath: root.path,
-        port: port,
-        tlsPort: tlsPort,
-        username: 'android',
-        password: 'sifre123',
-      );
-      try {
-        await server.start();
-        ftpsPort = tlsPort;
-        lastError = null;
-        break;
-      } catch (e) {
-        lastError = e;
-        // Portlar bu aralıkta başkasınca alındı; yeni portlarla tekrar dene.
-      }
-    }
-    if (lastError != null) {
-      throw StateError('FTP sunucusu başlatılamadı: $lastError');
-    }
+    // Eski yaklaşım (sonra kapatılan "probe" soketleriyle port arayıp hemen
+    // ardından yeniden bağlanmak) CI'da flaky idi: boş bulunan port seçildikle
+    // bağlanılacak kadar arasında başkasınca alınabiliyordu (TOCTOU), port
+    // `loopbackIPv4`'te aranıp sunucu `anyIPv4`'e bağlandığı için arayüz
+    // uyuşmazlığı olabiliyordu, ayrıca kapatılan soket az önce dinlediği port
+    // üzerinden geri verilebiliyordu (aynı port iki kez). Port 0 kullanıldığında
+    // bunların hiçbiri mümkündür değil: port artık seçilmez, tahsis edilir.
+    server = MiniFtpServer(
+      rootPath: root.path,
+      port: 0,
+      tlsPort: 0,
+      username: 'android',
+      password: 'sifre123',
+    );
+    await server.start();
+    port = server.boundPort;
+    ftpsPort = server.boundTlsPort;
+    expect(server.running, isTrue, reason: 'FTP kontrol portu dinlemiyor');
   });
 
   tearDownAll(() async {

@@ -44,6 +44,17 @@ class MiniFtpServer {
   bool get running => _control != null || _tlsControl != null;
   ServerSocket? _control;
   ServerSocket? _tlsControl;
+
+  /// Kontrol portunun gerçekten dinlendiği port.
+  ///
+  /// Yapıcıya `0` verilirse işletim sistemi boş bir port tahsis eder. Bu,
+  /// "önce boş port bulup sonra bağlanmak" yaklaşımındaki yarışı (TOCTOU)
+  /// tamamen ortadan kaldırır: port artık seçilmez, **tahsis edilir**.
+  int get boundPort => _control?.port ?? port;
+
+  /// FTPT (FTPS) portunun gerçekten dinlendiği port; `tlsPort` `0` verilmişse
+  /// tahsis edilen port.
+  int get boundTlsPort => _tlsControl?.port ?? tlsPort;
   final _log = StreamController<String>.broadcast();
   final _random = Random();
 
@@ -54,19 +65,24 @@ class MiniFtpServer {
     if (running) return;
     final control = await ServerSocket.bind(InternetAddress.anyIPv4, port);
     _control = control;
-    _log.add('FTP sunucusu başladı: port $port');
-    control.listen((socket) {
-      unawaited(_handleClient(socket));
-    });
+    _log.add('FTP sunucusu başladı: port ${control.port}');
+    // onError şart: dinleyici düzeyinde gelen bir soket hatası (örn. geçici
+    // EPIPE) onError yoksa aboneye hiç ulaşmaz ve bölge dışına taşar; bu da
+    // beklenmedik biçimde çöküşe yol açar. Burada günlüğe yazılır.
+    control.listen(
+      (socket) => unawaited(_handleClient(socket)),
+      onError: (Object e) => _log.add('FTP dinleyici hatası: $e'),
+    );
     if (enableTls) {
       try {
         final tls =
             await ServerSocket.bind(InternetAddress.anyIPv4, tlsPort);
         _tlsControl = tls;
-        _log.add('FTPS sunucusu başladı: port $tlsPort (şifreli)');
-        tls.listen((socket) {
-          unawaited(_handleTlsClient(socket));
-        });
+        _log.add('FTPS sunucusu başladı: port ${tls.port} (şifreli)');
+        tls.listen(
+          (socket) => unawaited(_handleTlsClient(socket)),
+          onError: (Object e) => _log.add('FTPS dinleyici hatası: $e'),
+        );
       } catch (e) {
         _log.add('FTPS başlatılamadı: $e');
       }
@@ -133,8 +149,10 @@ class MiniFtpServer {
     return rel.startsWith('/') ? rel : '/$rel';
   }
 
-  /// Dinamik PASV veri portu (2122-2160 arası).
-  int pickDataPort() => port + 1 + _random.nextInt(38);
+  /// Dinamik PASV veri portu (kontrol portunun1-38 üstü).
+  /// Dönen port tahmini bir adaydır; bağlanırken [MiniFtpServer]'daki
+  /// yeniden deneme döngüsü dolu portları eleyip sonunda port 0'a düşer.
+  int pickDataPort() => boundPort + 1 + _random.nextInt(38);
 }
 
 /// Tek istemci oturumu.
@@ -301,7 +319,7 @@ class _FtpSession {
         final scheme = arg.toUpperCase();
         if (scheme == 'TLS' || scheme == 'SSL' || scheme == 'TLS-C') {
           _reply('502 Bu sunucu yalnızca şifreli porttan (FTPS: '
-              '${server.tlsPort}) bağlantı kabul eder.');
+              '${server.boundTlsPort}) bağlantı kabul eder.');
         } else {
           _reply('504 Desteklenmeyen güvenlik türü: $arg');
         }
@@ -316,7 +334,7 @@ class _FtpSession {
           } else {
             _reply(
                 '536 PROT P yalnızca şifreli (FTPS) bağlantıda çalışır — '
-                'port ${server.tlsPort} kullanın');
+                'port ${server.boundTlsPort} kullanın');
           }
         } else {
           protPrivate = false;
