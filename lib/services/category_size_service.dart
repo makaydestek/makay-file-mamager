@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import 'platform_service.dart';
+import 'recent_seen_store.dart';
 import 'remote_service.dart';
 import 'webdav_service.dart';
 
@@ -113,7 +114,17 @@ class CategorySizeService {
     // Kapanış gönderilmez; test/sanal alan Zone'larında bu hataya yol açar.
     if (Platform.isAndroid) {
       const root = '/storage/emulated/0';
-      final folder = await _scanInIsolate(root);
+      // "Yeni Dosyalar" boyutu ekrandaki listeyle aynıdır: kullanıcının
+      // "Temizle" ile işaretlediği (görülen) dosyalar hariç tutulur. Yoksa
+      // kart ile ekran arasındaki değer hiç değişmezdi.
+      Set<String> seen;
+      try {
+        seen = await RecentSeenStore.load();
+      } catch (e) {
+        logSwallowed('kategori boyutu: görülen dosyalar', e);
+        seen = const {};
+      }
+      final folder = await _scanInIsolate(root, seen);
       for (final e in folder.entries) {
         out[e.key] = Formats.size(e.value);
       }
@@ -150,12 +161,19 @@ class CategorySizeService {
   ///
   /// Kapanış (closure) göndermek yerine istek nesnesi gönderilir; çünkü test
   /// veya sanal alan gibi özel Zone'larda kapanış "gönderilemez" sayılır.
-  static Future<Map<String, int>> _scanInIsolate(String root) async {
+  static Future<Map<String, int>> _scanInIsolate(
+    String root,
+    Set<String> seenRecent,
+  ) async {
     final port = ReceivePort();
     try {
       await Isolate.spawn(
         _scanIsolateEntry,
-        _SizeScanRequest(root: root, reply: port.sendPort),
+        _SizeScanRequest(
+          root: root,
+          seenRecent: seenRecent.toList(growable: false),
+          reply: port.sendPort,
+        ),
       );
       final raw = await port.first;
       if (raw is Map<String, int>) return raw;
@@ -171,26 +189,134 @@ class CategorySizeService {
   // İzolat içi tarama (yalnızca dart:io kullanır — channel/builder yok)
   // -------------------------------------------------------------------------
 
+  /// Taranan klasör kökleri (kategoriye göre dosyaların tamamı buradan gelir).
+  ///
+  /// Resimler/Videolar/Ses ekranları MediaStore üzerinden **cihazın tamamını**
+  /// listelediği için, karttaki boyut da yalnızca tek bir klasörü değil bu
+  /// klasörlerin tamamını kapsar. Klasör adı geçen uygulamaların medyası
+  /// (WhatsApp, Telegram, Instagram …) böylece kategori toplamına girer.
+  static const List<String> _scanFolders = [
+    'Download',
+    'DCIM',
+    'Pictures',
+    'Screenshots',
+    'Camera',
+    'Movies',
+    'Music',
+    'Documents',
+    'Recordings',
+    'Ringtones',
+    'Notifications',
+    'Podcasts',
+    'Audiobooks',
+    'WhatsApp',
+    'Telegram',
+    'Messenger',
+    'Signal',
+    'Instagram',
+    'Snapchat',
+    // Android/media altındaki uygulama medyası (Android 11+ yolu).
+    'Android/media',
+  ];
+
+  /// Dosya uzantısı → kategori kimliği; bilinmeyen uzantı null.
+  ///
+  /// Bu sınıflandırma, dosyanın **hangi kategoride listeleneceğini** de
+  /// belirler; kategori ekranıyla karttaki toplam böylece aynı dosyaları
+  /// sayar (karışık klasörlerde bir dosya tek kategoriye girer).
+  static String? categoryOfExtension(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'bmp' || 'svg' ||
+        'heic' || 'heif' || 'tif' || 'tiff' || 'raw' || 'dng' || 'ico':
+        return 'images';
+      case 'mp4' || 'mkv' || 'avi' || 'mov' || 'webm' || 'flv' || '3gp' ||
+        'm4v' || 'ts' || 'wmv' || 'mpg' || 'mpeg' || 'ogv' || '3g2':
+        return 'videos';
+      case 'mp3' || 'm4a' || 'aac' || 'flac' || 'ogg' || 'opus' || 'wav' ||
+        'wma' || 'amr' || 'mid' || 'mka' || 'ape':
+        return 'audio';
+      case 'pdf' || 'doc' || 'docx' || 'xls' || 'xlsx' || 'ppt' || 'pptx' ||
+        'txt' || 'csv' || 'rtf' || 'odt' || 'ods' || 'odp' || 'md' || 'epub' ||
+        'json' || 'xml' || 'html' || 'htm' || 'log':
+        return 'documents';
+      default:
+        return null;
+    }
+  }
+
   /// Kategori kimliği → toplam bayt.
   ///
-  /// Android kök dizinine göre hesaplanır; erişilemeyen klasörler yok
-  /// sayılır. [root] test için parametre olarak verilir.
-  /// Not: `analysis` (Bellek Analizi) bu haritada yer almaz; o başlık için
-  /// boş alan gösterilir (bkz. [_compute]).
+  /// * `downloads` → `Download` klasörünün **içindeki her şey** (ekran da
+  ///   o klasörü açtığı için kart da onu gösterir).
+  /// * `images` / `videos` / `audio` / `documents` → yukarıdaki klasörlerde
+  ///   **uzantısına göre** sınıflandırılan dosyaların toplamı; böylece
+  ///   resim yalnız Resimler, video yalnız Videolar kartına yazılır ve
+  ///   toplamlar kategori ekranlarıyla örtüşür.
+  /// * `recent` → son 7 günde değişen ve **henüz "Temizle" ile
+  ///   işaretlenmemiş** dosyalar (ekranla birebir aynı).
+  ///
+  /// [root] test için parametre olarak verilir.
   @visibleForTesting
-  static Map<String, int> scan(String root) {
+  static Map<String, int> scan(
+    String root, {
+    Set<String> seenRecent = const {},
+    int maxEntries = 60000,
+  }) {
     final sep = Platform.pathSeparator;
     return {
       'downloads': dirSize('$root${sep}Download'),
-      'images':
-          dirSize('$root${sep}DCIM') + dirSize('$root${sep}Pictures'),
-      'videos': dirSize('$root${sep}Movies') +
-          dirSize('$root${sep}WhatsApp${sep}Media${sep}WhatsApp Video'),
-      'audio': dirSize('$root${sep}Music') +
-          dirSize('$root${sep}WhatsApp${sep}Media${sep}WhatsApp Audio'),
-      'documents': dirSize('$root${sep}Documents'),
-      'recent': recentSize(root),
+      ...classifySizes(root, maxEntries: maxEntries),
+      'recent': recentSize(root, maxEntries: maxEntries, seen: seenRecent),
     };
+  }
+
+  /// Klasörlerdeki dosyaları uzantısına göre kategorilere böler.
+  ///
+  /// Tek bir yürüyüşte her dosya **yalnızca bir** kategoriye yazılır; böylece
+  /// toplamlar şişmez ve Resimler/Videolar/Ses ayrımı doğru olur.
+  @visibleForTesting
+  static Map<String, int> classifySizes(
+    String root, {
+    int maxEntries = 60000,
+  }) {
+    final sep = Platform.pathSeparator;
+    final totals = <String, int>{
+      'images': 0,
+      'videos': 0,
+      'audio': 0,
+      'documents': 0,
+    };
+    var visited = 0;
+    final stack = <String>[
+      for (final folder in _scanFolders) '$root$sep$folder',
+    ];
+    while (stack.isNotEmpty && visited < maxEntries) {
+      final path = stack.removeLast();
+      List<FileSystemEntity> items;
+      try {
+        items = Directory(path).listSync(followLinks: false);
+      } catch (_) {
+        continue; // Erişilemeyen klasör yok sayılır.
+      }
+      for (final e in items) {
+        if (++visited >= maxEntries) break;
+        final name = _nameOf(e.path);
+        if (name.isEmpty || name.startsWith('.')) continue;
+        if (e is Directory) {
+          if (name == 'LOST.DIR') continue;
+          stack.add(e.path);
+        } else if (e is File) {
+          final category = categoryOfExtension(_extensionOf(name));
+          if (category == null) continue;
+          try {
+            totals[category] = totals[category]! + e.lengthSync();
+          } catch (e) {
+            logSwallowed('kategori boyutu: dosya boyutu', e);
+          }
+        }
+      }
+    }
+    return totals;
   }
 
   /// Klasörün özyinelemeli toplam boyutu (erişim hataları yutulur).
@@ -219,10 +345,17 @@ class CategorySizeService {
 
   /// Son 7 günde değişen dosyaların toplam boyutu ("Yeni Dosyalar").
   ///
+  /// [seen] kümesindeki dosyalar (kullanıcının "Temizle" ile işaretledikleri)
+  /// **sayılmaz**: kart, ekranda gerçekten listelenen toplamı gösterir.
+  ///
   /// Tarama erişilemeyen/ağır dizimler atlanır ve işlem sayısı
   /// sınırlandırılır; böylece arka plan taraması makul sürede biter.
   @visibleForTesting
-  static int recentSize(String root, {int maxEntries = 60000}) {
+  static int recentSize(
+    String root, {
+    int maxEntries = 60000,
+    Set<String> seen = const {},
+  }) {
     final cutoff = DateTime.now().subtract(const Duration(days: 7));
     var total = 0;
     var visited = 0;
@@ -248,7 +381,12 @@ class CategorySizeService {
         } else if (e is File) {
           try {
             final stat = e.statSync();
-            if (stat.modified.isAfter(cutoff)) total += stat.size;
+            if (!stat.modified.isAfter(cutoff)) continue;
+            // "Temizle" ile görülmüş dosya kart boyutuna girmez.
+            if (seen.contains(RecentSeenStore.keyOf(e.path, stat.modified))) {
+              continue;
+            }
+            total += stat.size;
           } catch (e) {
             logSwallowed('kategori boyutu: son 7 gün', e);
           }
@@ -256,6 +394,12 @@ class CategorySizeService {
       }
     }
     return total;
+  }
+
+  /// Dosya adının uzantısı (nokta yoksa boş).
+  static String _extensionOf(String name) {
+    final i = name.lastIndexOf('.');
+    return i > 0 ? name.substring(i + 1).toLowerCase() : '';
   }
 
   /// Yolun son ögesi (dosya/dizin adı); ayraç farklarını yutar.
@@ -311,16 +455,26 @@ class CategorySizeService {
 
 /// İzolata gönderilecek boyut tarama isteği.
 class _SizeScanRequest {
-  const _SizeScanRequest({required this.root, required this.reply});
+  const _SizeScanRequest({
+    required this.root,
+    required this.seenRecent,
+    required this.reply,
+  });
 
   final String root;
+
+  /// "Temizle" ile görülmüş dosyalar (yol + değiştirme zamanı anahtarı).
+  final List<String> seenRecent;
   final SendPort reply;
 }
 
 /// İzolat giriş noktası: kapanış yerine üst düzey fonksiyon kullanılır.
 void _scanIsolateEntry(_SizeScanRequest req) {
   try {
-    req.reply.send(CategorySizeService.scan(req.root));
+    req.reply.send(CategorySizeService.scan(
+      req.root,
+      seenRecent: req.seenRecent.toSet(),
+    ));
   } catch (_) {
     req.reply.send(const <String, int>{});
   }

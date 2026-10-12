@@ -33,12 +33,17 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool fresh = false}) async {
     final allowed = await _service.ensurePermission();
     if (!allowed) {
       if (mounted) setState(() => _denied = true);
       return;
     }
+    // Aşağı kaydırmada önbellekler tazelenir: MediaStore'a sonradan eklenen
+    // dosyalar, değişen adetler ve "Tüm Dosyalar" adı böylece yansır.
+    // Albümden dönüldüğünde önbellek korunur (silme işleminde servis kendi
+    // kayıtlarını zaten temizler) — liste taraması tekrarlanmaz.
+    if (fresh) MediaService.clearCache();
     final albums = await _service.albums(widget.categoryId);
     if (!mounted) return;
     setState(() => _albums = albums);
@@ -46,6 +51,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final albums = _albums;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: _denied
@@ -53,24 +59,34 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
               setState(() => _denied = false);
               _load();
             })
-          : _albums == null
+          : albums == null
               ? const Center(child: CircularProgressIndicator())
-              : _albums!.isEmpty
+              : albums.isEmpty
                   ? const Center(child: Text('Öğe bulunamadı'))
-                  : (widget.categoryId == 'audio'
-                      ? _audioList()
-                      : _albumGrid()),
+                  : RefreshIndicator(
+                      // Aşağı kaydırma: önbelleklerle birlikte tam yenileme.
+                      onRefresh: () => _load(fresh: true),
+                      child: widget.categoryId == 'audio'
+                          ? _audioList()
+                          : _albumGrid(),
+                    ),
     );
   }
 
   /// Ses: liste görünümü (küçük resim + ad + adet) — referans "Ses" ekranı.
   Widget _audioList() {
+    final albums = _albums ?? const <MediaAlbum>[];
     return ListView.builder(
-      itemCount: _albums!.length,
+      itemCount: albums.length,
       itemBuilder: (context, index) {
-        final album = _albums![index];
+        final album = albums[index];
         return ListTile(
-          leading: _AlbumThumb(album: album, size: 56, rounded: 4),
+          leading: _AlbumThumb(
+            album: album,
+            categoryId: widget.categoryId,
+            size: 56,
+            rounded: 4,
+          ),
           title: Text(album.name),
           trailing: Text('(${album.count})'),
           onTap: () => _openAlbum(album),
@@ -81,6 +97,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
 
   /// Görüntüler/Videolar: kare ızgara — referans "Görüntüler" ekranı.
   Widget _albumGrid() {
+    final albums = _albums ?? const <MediaAlbum>[];
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -89,9 +106,9 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
         crossAxisSpacing: 8,
         childAspectRatio: 0.78,
       ),
-      itemCount: _albums!.length,
+      itemCount: albums.length,
       itemBuilder: (context, index) {
-        final album = _albums![index];
+        final album = albums[index];
         return InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () => _openAlbum(album),
@@ -104,7 +121,11 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _AlbumThumb(album: album, size: 300),
+                      _AlbumThumb(
+                        album: album,
+                        categoryId: widget.categoryId,
+                        size: 300,
+                      ),
                       if (widget.categoryId == 'videos')
                         const Center(
                           child: Icon(Icons.play_circle_fill_rounded,
@@ -129,16 +150,20 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
     );
   }
 
-  void _openAlbum(MediaAlbum album) {
-    Navigator.of(context).push(
+  Future<void> _openAlbum(MediaAlbum album) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AlbumScreen(
           albumId: album.id,
           title: album.name,
+          categoryId: widget.categoryId,
           isVideo: widget.categoryId == 'videos',
         ),
       ),
     );
+    // Albümde silme/kopyalama yapılmış olabilir: adetler ve kapaklar
+    // tazelensin (üstelik "Tüm Dosyalar" adı da yeniden adlandırılır).
+    if (mounted) _load();
   }
 }
 
@@ -146,18 +171,22 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
 class _AlbumThumb extends StatelessWidget {
   const _AlbumThumb({
     required this.album,
+    required this.categoryId,
     required this.size,
     this.rounded = 8,
   });
 
   final MediaAlbum album;
+
+  /// Küçük resmin ait olduğu kategori (karışık albümlerde kapak da süzülür).
+  final String categoryId;
   final double size;
   final double rounded;
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List?>(
-      future: _thumbFuture(album),
+      future: _thumbFuture(album, categoryId),
       builder: (context, snapshot) {
         final data = snapshot.data;
         if (data != null) {
@@ -177,16 +206,21 @@ class _AlbumThumb extends StatelessWidget {
     );
   }
 
-  static final Map<String, Future<Uint8List?>> _cache = {};
-
-  static Future<Uint8List?> _thumbFuture(MediaAlbum album) =>
-      _cache.putIfAbsent(album.id, () async {
-        final allowed = await const MediaService().ensurePermission();
-        if (!allowed) return null;
-        final assets = await const MediaService().assets(album.id, size: 1);
-        if (assets.isEmpty) return null;
-        return const MediaService().thumbnail(assets.first);
-      });
+  static Future<Uint8List?> _thumbFuture(MediaAlbum album, String categoryId) {
+    final cacheKey = '$categoryId|${album.id}';
+    final cached = MediaService.cachedThumb(cacheKey);
+    if (cached != null) return Future.value(cached);
+    return () async {
+      final allowed = await const MediaService().ensurePermission();
+      if (!allowed) return null;
+      final assets = await const MediaService()
+          .assets(album.id, categoryId: categoryId, size: 1);
+      if (assets.isEmpty) return null;
+      final data = await const MediaService().thumbnail(assets.first);
+      MediaService.cacheThumb(cacheKey, data);
+      return data;
+    }();
+  }
 }
 
 class _PermissionBody extends StatelessWidget {

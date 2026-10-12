@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makay_file_manager/services/category_size_service.dart';
+import 'package:makay_file_manager/services/recent_seen_store.dart';
 
 /// Ana ekran kategori boyutlarının hesaplanması:
-/// klasör taraması, son 7 gün penceresi ve erişilemeyen dizin davranışı.
+/// klasör taraması, uzantıya göre kategori ayrımı, son 7 gün penceresi,
+/// "Temizle" (görüldü) filtresi ve erişilemeyen dizin davranışı.
 void main() {
   late Directory root;
   late String base;
@@ -16,6 +18,7 @@ void main() {
     _write('$base${sep}Download${sep}a.txt', 100);
     _write('$base${sep}Download${sep}alt${sep}ic.txt', 5);
     _write('$base${sep}Download${sep}eski.txt', 77, stale: true);
+    _write('$base${sep}Download${sep}eklenti.png', 11);
     _write('$base${sep}Pictures${sep}p.png', 50);
     _write('$base${sep}DCIM${sep}c.jpg', 25);
     _write('$base${sep}Movies${sep}v.mp4', 40);
@@ -32,8 +35,8 @@ void main() {
   test('dirSize özyinelemeli toplar, olmayan dizin için 0 döner', () {
     final sep = Platform.pathSeparator;
     final downloads = CategorySizeService.dirSize('$base${sep}Download');
-    expect(downloads, 182,
-        reason: 'a.txt (100) + alt/ic.txt (5) + eski.txt (77)');
+    expect(downloads, 193,
+        reason: 'a.txt (100) + alt/ic.txt (5) + eski.txt (77) + eklenti.png (11)');
 
     expect(CategorySizeService.dirSize('$base${sep}BoyleBirKlasor'), 0);
   });
@@ -41,27 +44,69 @@ void main() {
   test('scan kategori başına toplamları hesaplar', () {
     final sizes = CategorySizeService.scan(base);
 
-    expect(sizes['downloads'], 182, reason: 'Download alt klasörüyle birlikte');
-    expect(sizes['images'], 75, reason: 'DCIM + Pictures');
+    expect(sizes['downloads'], 193,
+        reason: 'Download klasörünün tamamı (İndirilenler ekranı da onu açar)');
+    expect(sizes['images'], 86,
+        reason: 'DCIM (25) + Pictures (50) + Download içindeki png (11)');
     expect(sizes['videos'], 40);
     expect(sizes['audio'], 10);
-    expect(sizes['documents'], 30);
+    // Belgeler yalnız Documents klasörüyle sınırlı DEĞİLDİR: kullanıcı
+    // Download içindeki metin/PDF dosyalarını da "Belgeler" sayar.
+    expect(sizes['documents'], 212,
+        reason: 'Documents/d.pdf (30) + Download txt dosyaları (100+5+77)');
+  });
 
-    // Klasör toplamları: kökteki kaynak.dart (999) bunlara girmez.
-    final folderSum = sizes['downloads']! +
-        sizes['images']! +
-        sizes['videos']! +
-        sizes['audio']! +
-        sizes['documents']!;
-    expect(folderSum, 182 + 75 + 40 + 10 + 30);
+  test('classifySizes dosyayı yalnız bir kategoriye yazar', () {
+    final totals = CategorySizeService.classifySizes(base);
+    final sum = totals.values.fold<int>(0, (a, b) => a + b);
+    // Download/eklenti.png hem downloads hem images toplamına girer; burada
+    // ise tek bir kategoriye yazıldığı için toplam şişmez.
+    expect(sum, 86 + 40 + 10 + 212);
+    expect(totals['images'], 86);
+  });
+
+  test('categoryOfExtension uzantıları doğru kategoriye ayırır', () {
+    expect(CategorySizeService.categoryOfExtension('png'), 'images');
+    expect(CategorySizeService.categoryOfExtension('MP4'), 'videos');
+    expect(CategorySizeService.categoryOfExtension('mp3'), 'audio');
+    expect(CategorySizeService.categoryOfExtension('pdf'), 'documents');
+    expect(CategorySizeService.categoryOfExtension('exe'), isNull);
+    expect(CategorySizeService.categoryOfExtension(''), isNull);
   });
 
   test('recentSize yalnız son 7 günde değişen dosyaları sayar', () {
     final recent = CategorySizeService.recentSize(base);
-    // Kök dosya (999) + Download (100 + 5) + klasör dosyaları
+    // Kök dosya (999) + Download (100 + 5 + 11) + klasör dosyaları
     // (50 + 25 + 40 + 10 + 30); 30 günlük eski.txt (77) hariç.
-    expect(recent, 999 + 100 + 5 + 50 + 25 + 40 + 10 + 30,
+    expect(recent, 999 + 100 + 5 + 11 + 50 + 25 + 40 + 10 + 30,
         reason: '30 günlük eski.txt sayılmamalı, kök dosya sayılmalı');
+  });
+
+  test('recentSize görülmüş ("Temizle") dosyaları hariç tutar', () {
+    final sep = Platform.pathSeparator;
+    final a = File('$base${sep}Download${sep}a.txt');
+    final key = RecentSeenStore.keyOf(
+        a.path, a.statSync().modified);
+
+    final filtered = CategorySizeService.recentSize(base, seen: {key});
+    final all = CategorySizeService.recentSize(base);
+    expect(filtered, all - 100,
+        reason: 'görülen dosya kart boyutuna girmemeli');
+  });
+
+  test('scan, görülmüş dosyaları "recent" boyutundan düşer', () {
+    final sep = Platform.pathSeparator;
+    final png = File('$base${sep}Pictures${sep}p.png');
+    final key =
+        RecentSeenStore.keyOf(png.path, png.statSync().modified);
+
+    final sizes = CategorySizeService.scan(base, seenRecent: {key});
+    final plain = CategorySizeService.scan(base);
+    expect(sizes['recent'], plain['recent']! - 50,
+        reason: 'Ana Sayfa kartı temizlenen dosyayı göstermemeli');
+    // Diğer kategoriler etkilenmez: temizleme yalnız "Yeni Dosyalar" listesini
+    // ilgilendirir, dosya silinmemiştir.
+    expect(sizes['images'], plain['images']);
   });
 
   test('recentSize erişilemeyen dizinde sessizce atlar', () {

@@ -285,6 +285,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 _showInfo(e);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.copy_rounded),
+              title: const Text('Kopyala'),
+              subtitle: const Text('Hedef klasörde "Yapıştır" ile bırakılır'),
+              onTap: () {
+                Navigator.pop(context);
+                _copySelectionToClipboard([e], cut: false);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_cut_rounded),
+              title: const Text('Taşı'),
+              subtitle: const Text('Hedef klasörde "Yapıştır" ile taşınır'),
+              onTap: () {
+                Navigator.pop(context);
+                _copySelectionToClipboard([e], cut: true);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded),
+              title: const Text('Sil'),
+              subtitle: const Text(
+                  'Geri dönüşüm kutusuna taşır (ayar değiştirilebilir)'),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteEntries([e]);
+              },
+            ),
             if (!e.isDirectory && ArchiveService.isArchive(e.name))
               ListTile(
                 leading: const Icon(Icons.folder_zip_outlined),
@@ -641,9 +669,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return TransferResult(files: files, bytes: bytes, cancelled: false);
   }
 
-  Future<void> _deleteSelected() async {
+  /// Seçili/verilen öğeleri siler: geri dönüşüm kutusu ya da kalıcı.
+  Future<void> _deleteSelected() async =>
+      _deleteEntries(_entries.where((e) => _selected.contains(e.path)));
+
+  Future<void> _deleteEntries(Iterable<FileEntry> targets) async {
+    final entries = targets.toList(growable: false);
+    if (entries.isEmpty) return;
     final settings = context.read<SettingsProvider>();
-    final count = _selected.length;
+    final count = entries.length;
     final useBin = settings.recycleBinDefault;
     var confirmed = !settings.recycleBinConfirm;
     if (!confirmed) {
@@ -667,20 +701,40 @@ class _BrowserScreenState extends State<BrowserScreen> {
           false;
     }
     if (!confirmed) return;
-    for (final path in _selected) {
-      final entry = _entries.where((e) => e.path == path).firstOrNull;
-      if (entry == null) continue;
+    for (final entry in entries) {
       try {
         if (useBin) {
           await RecycleBinService.instance.moveToRecycle(entry);
         } else {
-          await _service.deleteEntry(path, useRecycleBin: false);
+          await _service.deleteEntry(entry.path, useRecycleBin: false);
         }
       } catch (e) {
         logSwallowed('tarayıcı: silme', e);
       }
     }
-    if (mounted) _load();
+    if (mounted) {
+      setState(_selected.clear);
+      _load();
+    }
+  }
+
+  /// Seçimi panoya alır ve kullanıcıyı "Yapıştır"a yönlendirir.
+  void _copySelectionToClipboard(List<FileEntry> entries, {required bool cut}) {
+    if (entries.isEmpty) return;
+    if (cut) {
+      ClipboardManager.instance.cut(entries);
+    } else {
+      ClipboardManager.instance.copy(entries);
+    }
+    setState(_selected.clear);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${entries.length} öğe ${cut ? 'taşınmak' : 'kopyalanmak'} üzere '
+          'alındı — hedef klasörde "Yapıştır"a dokunun',
+        ),
+      ),
+    );
   }
 
   Future<void> _rename(FileEntry e) async {
@@ -915,20 +969,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ] else ...[
             IconButton(
               icon: const Icon(Icons.copy_rounded),
-              onPressed: () {
-                ClipboardManager.instance.copy(
-                    _entries.where((e) => _selected.contains(e.path)).toList());
-                setState(_selected.clear);
-              },
+              onPressed: () => _copySelectionToClipboard(
+                _entries.where((e) => _selected.contains(e.path)).toList(),
+                cut: false,
+              ),
               tooltip: 'Kopyala',
             ),
             IconButton(
               icon: const Icon(Icons.content_cut_rounded),
-              onPressed: () {
-                ClipboardManager.instance.cut(
-                    _entries.where((e) => _selected.contains(e.path)).toList());
-                setState(_selected.clear);
-              },
+              onPressed: () => _copySelectionToClipboard(
+                _entries.where((e) => _selected.contains(e.path)).toList(),
+                cut: true,
+              ),
               tooltip: 'Taşı',
             ),
             IconButton(

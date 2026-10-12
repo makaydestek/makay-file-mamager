@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -277,4 +278,52 @@ void main() {
     expect(find.text('Tüm geçmişi tekrar göster'), findsNothing,
         reason: 'liste dolunca düğme kaybolur');
   }, timeout: const Timeout(Duration(seconds: 90)));
+
+  testWidgets('"Temizle" Ana Sayfa kategori önbelleğini de tazeler',
+      (tester) async {
+    // Kullanıcı şikâyeti: Yeni Dosyalar ekranı temizlense bile Ana Sayfa'daki
+    // boyut aynı kalıyordu. Kök neden, kategori boyutu önbelleğinin silinme
+    // işareti almamasıydı.
+    const cacheKey = 'category_sizes_cache';
+    final root = Directory.systemTemp.createTempSync('recent_cache_');
+    addTearDown(() {
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    final sep = Platform.pathSeparator;
+    File('${root.path}${sep}yeni.txt').writeAsStringSync('x' * 40);
+
+    SharedPreferences.setMockInitialValues({
+      cacheKey: jsonEncode({
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'values': {'recent': '40 B'},
+      }),
+    });
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(cacheKey), isNotNull, reason: 'kurulum: önbellek var');
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MaterialApp(home: RecentFilesScreen(root: root.path)),
+      ),
+    );
+
+    var found = false;
+    for (var i = 0; i < 200 && !found; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      found = find.text('yeni.txt').evaluate().isNotEmpty;
+    }
+    expect(found, isTrue);
+
+    await tester.tap(find.byTooltip('Temizle'));
+    await tester.pumpAndSettle();
+
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(cacheKey), isNull,
+        reason: 'temizleme sonrası önbellek silinmeli; yoksa Ana Sayfa kartı '
+            '10 dakika boyunca bayat boyutu göstermeye devam ederdi');
+  }, timeout: const Timeout(Duration(seconds: 60)));
 }

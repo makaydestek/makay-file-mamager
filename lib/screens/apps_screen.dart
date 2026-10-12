@@ -6,11 +6,15 @@ import '../services/platform_service.dart';
 import '../utils/formats.dart';
 import '../widgets/app_icon.dart';
 
-/// Uygulamalar ekranı: İndirilenler (APK'lar) / Tümü / Dahili (sistem).
+/// Uygulamalar ekranı: Tümü / İndirilenler (APK'lar) / Dahili (sistem).
+///
+/// **"TÜMÜ" her zaman en önde ve varsayılan sekmedir** — ekran hangi
+/// yoldan (ana ekran kartı, çekmece, `/apps/system`) açılırsa açılsın
+/// ilk görülen sekme budur.
 class AppsScreen extends StatefulWidget {
   const AppsScreen({super.key, this.initialIndex = 0});
 
-  /// Açılışta gösterilecek sekme (0: indirilenler, 1: tümü, 2: dahili).
+  /// Açılışta gösterilecek sekme (0: tümü, 1: indirilenler, 2: dahili).
   final int initialIndex;
 
   @override
@@ -41,7 +45,9 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _load() async {
-    final apps = await PlatformService.installedApps();
+    // `installedApps` hata/desteklenmeyen durumda `const []` döndürür;
+    // sabit liste `sort` ile değiştirilemediği için MUTLAKA kopyalanır.
+    final apps = List<InstalledApp>.of(await PlatformService.installedApps());
     final apks = _downloadedApks();
     apps.sort((a, b) =>
         _sortDesc ? b.size.compareTo(a.size) : a.size.compareTo(b.size));
@@ -98,9 +104,10 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
         ],
         bottom: TabBar(
           controller: _tabController,
+          // "TÜMÜ" her zaman en başta ve varsayılan sekmedir.
           tabs: const [
-            Tab(text: 'İNDİRİLENLER'),
             Tab(text: 'TÜMÜ'),
+            Tab(text: 'İNDİRİLENLER'),
             Tab(text: 'DAHİLİ'),
           ],
         ),
@@ -110,8 +117,8 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
           : TabBarView(
               controller: _tabController,
               children: [
-                _downloadsTab(),
                 _appsList(_apps, 'Yüklü uygulama bulunamadı'),
+                _downloadsTab(),
                 _appsList(
                   _apps.where((a) => a.isSystem).toList(growable: false),
                   'Cihazla gelen uygulama bulunamadı',

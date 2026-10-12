@@ -1,8 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../models/file_entry.dart';
+import '../providers/settings_provider.dart';
+import '../services/category_size_service.dart';
+import '../services/clipboard_manager.dart';
+import '../services/file_service.dart';
+import '../services/recycle_bin_service.dart';
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import '../services/recent_seen_store.dart';
@@ -50,6 +59,16 @@ class RecentFilesScreen extends StatefulWidget {
 class _RecentFilesScreenState extends State<RecentFilesScreen>
     with WidgetsBindingObserver {
   List<RecentFile>? _files;
+
+  /// Çoklu seçim: seçilen dosya yolları (uzun basma ile).
+  final Set<String> _selected = {};
+  bool get _selecting => _selected.isNotEmpty;
+  bool _working = false;
+
+  /// Listelenen dosyaların toplam boyutu (özet satırı için).
+  int get _totalBytes =>
+      (_files ?? const <RecentFile>[])
+          .fold<int>(0, (sum, f) => sum + f.size);
 
   /// Kullanıcı listeyi "Temizle" ile boşalttı mı?
   ///
@@ -107,6 +126,8 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
       if (!mounted) return;
       setState(() {
         _files = files;
+        // Seçim, taze listeyle tutarsız kalmasın diye sıfırlanır.
+        _selected.clear();
         // `_cleared` bilinçli olarak SIFIRLANMAZ: aşağı kaydırmak taramayı
         // yeniler ama geçmişi geri getirmez; "Tüm geçmişi tekrar göster"
         // düğmesi bu yüzden yenilemeden sonra da ekranda kalır.
@@ -134,7 +155,14 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
     setState(() {
       _files = const [];
       _cleared = true;
+      _selected.clear();
     });
+    // "Temizleme" yalnız listeyi boşaltır ama Ana Sayfa'daki "Yeni Dosyalar"
+    // kartındaki boyutun da bunu izlemesi gerekir: önbellek silinip yeniden
+    // hesaplanır (artık temizlenen dosyalar sayılmaz).
+    await CategorySizeService.invalidate();
+    unawaited(CategorySizeService.refresh(force: true));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Liste temizlendi — dosyalarınız silinmedi')),
     );
@@ -149,6 +177,10 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
   Future<void> _restoreHistory() async {
     await RecentSeenStore.forgetAll();
     if (!mounted) return;
+    // Geçmiş geri geldi: Ana Sayfa'daki "Yeni Dosyalar" boyutu da tazelenir.
+    await CategorySizeService.invalidate();
+    unawaited(CategorySizeService.refresh(force: true));
+    if (!mounted) return;
     await _load();
   }
 
@@ -158,16 +190,82 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
     final hasFiles = files != null && files.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Yeni Dosyalar'),
-        actions: [
-          // Yalnızca liste doluyken anlamlı; dosyalara dokunulmaz.
-          if (hasFiles)
-            IconButton(
-              icon: const Icon(Icons.cleaning_services_rounded),
-              tooltip: 'Temizle',
-              onPressed: _clearList,
-            ),
-        ],
+        leading: _selecting
+            ? IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => setState(_selected.clear),
+              )
+            : null,
+        title: Text(_selecting ? '${_selected.length} seçili' : 'Yeni Dosyalar'),
+        // Toplam özet: listedeki dosya sayısı + toplam boyut.
+        bottom: (_selecting || !hasFiles)
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(22),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '${files.length} dosya • Toplam ${Formats.size(_totalBytes)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+        actions: _selecting
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded),
+                  tooltip: 'Kopyala',
+                  onPressed: _working ? null : () => _copyOrCut(cut: false),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.content_cut_rounded),
+                  tooltip: 'Taşı',
+                  onPressed: _working ? null : () => _copyOrCut(cut: true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  tooltip: 'Sil',
+                  onPressed: _working ? null : _deleteSelected,
+                ),
+                // Dar ekranda taşmayı önlemek için kalan işlemler menüde.
+                PopupMenuButton<String>(
+                  tooltip: 'Daha fazla',
+                  enabled: !_working,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'share':
+                        _shareSelected();
+                      case 'rename':
+                        _renameSelected();
+                      case 'info':
+                        _showInfoSelected();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                        value: 'share', child: Text('Paylaş')),
+                    PopupMenuItem(
+                      value: 'rename',
+                      enabled: _selected.length == 1,
+                      child: const Text('Yeniden adlandır'),
+                    ),
+                    PopupMenuItem(
+                      value: 'info',
+                      enabled: _selected.length == 1,
+                      child: const Text('Bilgi'),
+                    ),
+                  ],
+                ),
+              ]
+            : [
+                // Yalnızca liste doluyken anlamlı; dosyalara dokunulmaz.
+                if (hasFiles)
+                  IconButton(
+                    icon: const Icon(Icons.cleaning_services_rounded),
+                    tooltip: 'Temizle',
+                    onPressed: _clearList,
+                  ),
+              ],
       ),
       body: files == null
           ? const Center(child: CircularProgressIndicator())
@@ -183,6 +281,208 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
                 )
               : _emptyState(),
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Dosya işlemleri (kopyala / taşı / sil / paylaş)
+  // -------------------------------------------------------------------------
+
+  /// Seçili dosyalar için tarayıcıyla aynı [FileEntry] biçimini üretir.
+  List<FileEntry> get _selectedEntries => (_files ?? const <RecentFile>[])
+      .where((f) => _selected.contains(f.path))
+      .map((f) => FileEntry(
+            name: f.name,
+            path: f.path,
+            isDirectory: false,
+            size: f.size,
+            modified: f.modified,
+          ))
+      .toList(growable: false);
+
+  /// Seçilenleri uygulama panosuna alır; hedef klasörde "Yapıştır" ile
+  /// taşınır/kopyalanır.
+  Future<void> _copyOrCut({required bool cut}) async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    if (cut) {
+      ClipboardManager.instance.cut(entries);
+    } else {
+      ClipboardManager.instance.copy(entries);
+    }
+    if (!mounted) return;
+    setState(_selected.clear);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${entries.length} öğe ${cut ? 'taşınmak' : 'kopyalanmak'} üzere '
+          'alındı — hedef klasörde "Yapıştır"a dokunun',
+        ),
+      ),
+    );
+  }
+
+  /// Seçili dosyaları geri dönüşüm kutusuna taşır ya da kalıcı siler.
+  Future<void> _deleteSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty || _working) return;
+    final useBin = _recycleBinEnabled();
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(useBin ? 'Geri dönüşüm kutusuna taşı' : 'Kalıcı sil'),
+            content: Text('${entries.length} dosya '
+                '${useBin ? 'geri dönüşüm kutusuna taşınacak' : 'kalıcı olarak silinecek'}.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('İptal'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(useBin ? 'Taşı' : 'Sil'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    setState(() => _working = true);
+    if (useBin) {
+      // Manifest mevcut kutu içeriğiyle birleştirilmeli (yoksa ezilirdi).
+      await RecycleBinService.instance.load();
+    }
+    var done = 0;
+    for (final entry in entries) {
+      try {
+        if (useBin) {
+          await RecycleBinService.instance.moveToRecycle(entry);
+        } else {
+          await const FileService().deleteEntry(entry.path);
+        }
+        done++;
+      } catch (e) {
+        logSwallowed('yeni dosyalar: silme', e);
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _working = false;
+      _selected.clear();
+      _files = (_files ?? const <RecentFile>[])
+          .where((f) => !entries.any((e) => e.path == f.path))
+          .toList(growable: false);
+    });
+    // Ana Sayfa'daki "Yeni Dosyalar" boyutu silinen dosyaları izlemeli.
+    await CategorySizeService.invalidate();
+    unawaited(CategorySizeService.refresh(force: true));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$done dosya ${useBin ? 'geri dönüşüm kutusuna taşındı' : 'silindi'}')),
+    );
+  }
+
+  /// Seçili dosyaları sistem paylaşım sayfasıyla paylaşır.
+  Future<void> _shareSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    setState(_selected.clear);
+    await SharePlus.instance.share(
+      ShareParams(files: [for (final e in entries) XFile(e.path)]),
+    );
+  }
+
+  /// Tek dosyayı yeniden adlandırır ("Düzelt"); liste ve kategori boyutları
+  /// işlem sonunda tazelenir.
+  Future<void> _renameSelected() async {
+    final entries = _selectedEntries;
+    if (entries.length != 1) return;
+    final entry = entries.first;
+    final controller = TextEditingController(text: entry.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Yeniden adlandır'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Yeni ad'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || newName == entry.name) return;
+    try {
+      await const FileService().rename(entry.path, newName);
+    } catch (e) {
+      logSwallowed('yeni dosyalar: yeniden adlandırma', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Yeniden adlandırılamadı: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(_selected.clear);
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Yeniden adlandırıldı: $newName')));
+  }
+
+  /// Tek dosyanın bilgi diyaloğu (boyut, tarih, konum).
+  void _showInfoSelected() {
+    final entries = _selectedEntries;
+    if (entries.length != 1) return;
+    final entry = entries.first;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(entry.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Boyut: ${Formats.size(entry.size)}'),
+            Text('Değiştirilme: ${Formats.date(entry.modified)}'),
+            const SizedBox(height: 8),
+            SelectableText('Konum: ${entry.path}'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ayarlar okunabilirse geri dönüşüm tercihi, değilse varsayılan (kutu).
+  ///
+  /// Ekran testlerinde Provider atası bulunmayabilir; bu durumda sessizce
+  /// varsayılana düşülür.
+  bool _recycleBinEnabled() {
+    try {
+      return context.read<SettingsProvider>().recycleBinDefault;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _toggleSelect(RecentFile f) {
+    setState(() {
+      if (!_selected.remove(f.path)) _selected.add(f.path);
+    });
   }
 
   /// Liste boşken: kaydırarak yenilemeye izin veren kaydırılabilir boş ekran.
@@ -244,14 +544,29 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
         Icons.folder_zip_rounded,
       _ => Icons.insert_drive_file_rounded,
     };
+    final selected = _selected.contains(f.path);
     return ListTile(
+      selected: selected,
+      selectedTileColor:
+          Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
       leading: Icon(icon, size: 32, color: const Color(0xFF00897B)),
       title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '(${Formats.date(f.modified)} • ${Formats.size(f.size)})',
         maxLines: 1,
       ),
-      onTap: () => _open(f),
+      trailing: _selecting
+          ? Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.circle_outlined,
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey,
+            )
+          : null,
+      onTap: () => _selecting ? _toggleSelect(f) : _open(f),
+      onLongPress: () => _toggleSelect(f),
     );
   }
 
