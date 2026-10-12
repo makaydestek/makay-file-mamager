@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -65,6 +66,68 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Keystore KORUMASI — release imzalama anahtarı hiçbir şekilde değiştirilemez
+// veya silinmez.
+//
+// Beklenen SHA256 özetleri git'e giren `docs/keystore.sha256` içinde tutulur;
+// release derlemesinden önce dosya bu özetle karşılaştırılır ve fark varsa
+// derleme DURDURULUR. Değişmiş anahtarla imzalanan APK, mevcut kullanıcılara
+// kurulamaz (imza parmak izi değişir) — bu yüzden sessizce geçilmez.
+//
+// Dosyanın yokluğu hata DEĞİLDİR: anahtar git'e girmediği için temiz bir
+// klonlamada bulunmayabilir; yalnızca uyarı verilir ve build.gradle.kts'teki
+// "yoksa debug ile imzala" akışı çalışmaya devam eder.
+val verifyKeystore by tasks.registering {
+    group = "verification"
+    description = "Release keystore dosyasının değişmediğini doğrular."
+    val keystoreFile = file("upload-keystore.jks")
+    val manifestFile = rootProject.file("../docs/keystore.sha256")
+    doLast {
+        if (!manifestFile.exists()) {
+            logger.warn("[KESTORE] Beklenen özet dosyası yok: $manifestFile — doğrulama atlandı.")
+            return@doLast
+        }
+        if (!keystoreFile.exists()) {
+            logger.warn("[KESTORE] Keystore bulunamadı: $keystoreFile — doğrulama atlandı.")
+            return@doLast
+        }
+        val expected = manifestFile.readLines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .mapNotNull { line ->
+                val parts = line.split(Regex("\\s+"))
+                if (parts.size < 2) null else parts[0].lowercase() to parts[1]
+            }
+            .firstOrNull { (_, rel) -> rel.endsWith("upload-keystore.jks") }
+            ?.first
+        if (expected == null) {
+            logger.warn("[KESTORE] Özet kaydı bulunamadı — doğrulama atlandı.")
+            return@doLast
+        }
+        val actual = MessageDigest.getInstance("SHA-256")
+            .digest(keystoreFile.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        if (!actual.equals(expected, ignoreCase = true)) {
+            throw GradleException(
+                "[KESTORE] İmza anahtarı DEĞİŞTİRİLMİŞ veya BOZULMUŞ!\n" +
+                    "  beklenen: $expected\n" +
+                    "  bulunan : $actual\n" +
+                    "  Bu dosya asla değiştirilmez/silinmez. Onarım için:\n" +
+                    "  powershell -File tool/keystore_guard.ps1 -Fix",
+            )
+        }
+        logger.lifecycle("[KESTORE] İmza anahtarı doğrulandı.")
+    }
+}
+
+// Release derlemeleri doğrulamaya bağlıdır; debug derlemeleri etkilenmez.
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease") {
+        dependsOn(verifyKeystore)
     }
 }
 

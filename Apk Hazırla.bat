@@ -38,6 +38,19 @@ if "%VER%"=="" (
 echo Yeni surum: %VER%
 
 echo.
+echo [0/5] Imza anahtari keystore dogrulaniyor...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tool\keystore_guard.ps1"
+if errorlevel 1 (
+  echo.
+  echo [HATA] Imza anahtari bozulmus ya da degistirilmis! Derleme durduruldu.
+  echo        Keystore asla degistirilmez ve silinmez - bu haliyle imzalanan
+  echo        APK, mevcut kullanicilara kurulamaz.
+  echo        Onarim icin:  powershell -File tool\keystore_guard.ps1 -Fix
+  pause
+  exit /b 1
+)
+
+echo.
 echo [1/5] APK derleniyor (tek yapilandirma, birkac dakika surebilir)...
 call flutter build apk --release
 if errorlevel 1 (
