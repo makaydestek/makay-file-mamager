@@ -49,11 +49,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
     if (type == null || !mounted) return;
 
     // Adım 1b: "Yerel Ağ" doğrudan tarama ekranını açar.
+    //
+    // Tarama ekranı, form onaylanınca konumu döndürür. Bu konumun da
+    // kalıcı olarak kaydedilmesi gerekir: eskiden yalnızca `_load()`
+    // çağrılıyor (sadece yeniden okuma), yani kullanıcı "Kaydet"e bassa
+    // bile bağlantı kaydedilmiyor ve listeye hiç gelmiyordu.
     if (type == 'lan') {
       final added = await Navigator.of(context).push<RemoteLocation>(
         MaterialPageRoute(builder: (_) => const LanScanScreen()),
       );
-      if (added != null) await _load();
+      if (added != null && mounted) {
+        await _persist(
+          List<RemoteLocation>.of(_locations)..add(added),
+          successMessage: '"${added.name}" kaydedildi ✅',
+        );
+      }
       return;
     }
 

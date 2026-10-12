@@ -640,7 +640,75 @@ hesapta force yutulmaz). Analiz temiz, tam paket **190/190**.
 > ve FTP sunucusu `FileService`/`CategorySizeService` kullanmıyor — bilinen
 > kararsızlık, bu maddeden bağımsız.
 
+### A25 — Yerel Ağ Taramasından Eklenen Bağlantı Kaydedilmiyordu ✅
+
+**Kullanıcı raporu**: "Yerel Ağ Taraması" sonrası seçim yapılıp bilgiler
+girilip "Kaydet"e basılınca işlem tamamlanmıyor; aynı akış FTP ile
+eklendiğinde sorunsuzdu.
+
+**Kök neden**: `RemoteScreen._add` içinde "Yerel Ağ" (LAN) akışında tarama
+ekranının döndürdüğü konum **kalıcı olarak hiç kaydedilmiyordu**:
+
+```dart
+if (type == 'lan') {
+  final added = await Navigator.push<...LanScanScreen>(...);
+  if (added != null) await _load();  // ← yalnızca YENİDEN OKUYOR
+}
+```
+
+`_load()` sadece `RemoteLocationStore.load()` çağırıyordu; `save()` hiç
+çağrılmadığı için konum listeye hiç gelmiyordu. Doğrudan eklemede (tür
+seç → form → Kaydet) ise `_persist` vardı — bu yüzden FTP/SMB/WebDAV elle
+eklenirken sorunsuzdu.
+
+**Düzeltme**: LAN akışında `added != null` durumunda artık `_persist(...)`
+çağrılıyor — konum `RemoteLocationStore`'a yazılıyor, listede görünüyor ve
+"kaydedildi ✅" geri bildirimi gösteriliyor.
+
+**Test**: `remote_connections_e2e_test.dart` → "Yerel Ağ akışı: tarama
+sonucundaki konum KAYDEDİLİR" (regresyon testi: tarama ekranı `pop(loc)`
+ile kapanır gibi davranılıp kalıcılık ve geri bildirim doğrulanır). Analiz
+temiz, tam paket **191/191**.
+
+### A26 — photo_manager KGP Uyarısı: Built-in Kotlin'e Geçiş ✅
+
+`flutter build` sırasında çıkan *"Your app uses the following plugins that
+apply Kotlin Gradle Plugin (KGP): photo_manager"* uyarısı denetlendi.
+
+**Bulgular**
+
+- `photo_manager` **3.12.0 zaten en yeni sürüm** (2026-08-09); AGP 9'un
+  yerleşik (built-in) Kotlin derlemesini **destekliyor** — KGP'yi yalnızca
+  `android.builtInKotlin=false` iken uyguluyor.
+- Uyarı büyük ölçüde **yanlış pozitiftir**: Flutter'ın dedektörü eklentinin
+  `build.gradle` dosyasını **metin olarak tarayıp** `apply plugin:
+  'kotlin-android'` satırını regex ile bulur; satır hiç çalışmayan
+  `if (!useBuiltInKotlin)` dalının içinde olsa da işaretlenir. Upstream:
+  fluttercandies/flutter_photo_manager **#1450** + **PR #1451** (açık; bu
+  satır `pluginManager.apply(...)` biçimine çevrilecek).
+- **Asıl risk bizim tarafımızdaydı**: `android/gradle.properties` içinde
+  `android.builtInKotlin=false` yazıyordu → photo_manager **gerçekten KGP
+  uyguluyordu** (legacy mod). Flutter, "KGP uygulayan eklentilerle geleceği
+  build'i reddedeceğini" bildirdiği için bu, zamanla build kırardı.
+
+**Yapılan**: `android.builtInKotlin=true` yapıldı; photo_manager artık KGP
+uygulamıyor ve derleme AGP 9'un yerleşik Kotlin'iyle yapılıyor.
+`builtInKotlin=true` ile `flutter build apk --debug` doğrulandı ✅.
+
+**İzleme**: Kalan metin-uyarısı, PR #1451 yayınlandığında (photo_manager
+3.12.1+) `flutter pub upgrade photo_manager` ile tamamen kaybolacak —
+**bir sonraki sürümlerde `pub outdated`'a bakıp photo_manager sürümünü
+yükseltmek yeterli.** `gradle.properties`'taki `builtInKotlin=true`
+ayarının `false` yapılmaması gerekir (false, photo_manager'ı KGP'ye geri
+döndürür); ayrıca `kotlin.incremental=false` ayarı Windows'ta bilinen bir
+Gradle kilitlenmesi nedeniyle korunuyor.
+
 ## Riskler / Notlar
+- **photo_manager KGP uyarısı** (Android build çıktısı): yanlış pozitif —
+  `android/gradle.properties` içindeki `android.builtInKotlin=true`
+  korunmalı (bkz. A26). Upstream PR #1451 yayınlandığında (photo_manager
+  3.12.1+) `flutter pub upgrade photo_manager` ile uyarının kendisi de
+  kaybolacak.
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.
 - Medya okuma için Android 13+ `READ_MEDIA_IMAGES/VIDEO/AUDIO` izinleri A3'te eklenecek.

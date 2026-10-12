@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:makay_file_manager/screens/lan_scan_screen.dart';
 import 'package:makay_file_manager/screens/remote_screen.dart';
 import 'package:makay_file_manager/services/ftp_server.dart';
 import 'package:makay_file_manager/services/remote_service.dart';
@@ -187,4 +188,57 @@ void main() {
     await saveAndVerify(tester,
         listLabel: 'WebDAV Sunucu', type: 'webdav');
   }, timeout: const Timeout(Duration(seconds: 120)));
+
+  testWidgets('Yerel Ağ akışı: tarama sonucundaki konum KAYDEDİLİR',
+      (tester) async {
+    // Regresyon testi: "Yerel Ağ" akışında konum, tarama ekranınca
+    // döndürülüyordu ama `_persist` hiç çağrılmıyordu → kullanıcı "Kaydet"
+    // dese bile bağlantı kaydedilmiyor ve listeye hiç gelmiyordu.
+    await tester.pumpWidget(const MaterialApp(home: RemoteScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yerel Ağ'));
+    // Tarama ekranı ilerleme animasyonu gösterir → pumpAndSettle asla
+    // "settle" olmaz; sınırlı pump ile yerleşim beklenir.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    expect(find.byType(LanScanScreen), findsOneWidget,
+        reason: 'Tarama ekranı açılmış olmalı');
+
+    // Form onaylanıp konum döndürülmüş gibi davranılır: tarama ekranı
+    // `pop(loc)` ile kapanır (ağ taraması test ortamında gerçek async I/O
+    // beklemediği için _subnet null kalır; akışın kaydetme kısmını bu
+    // test etkilemez).
+    final state =
+        tester.state<State<LanScanScreen>>(find.byType(LanScanScreen));
+    Navigator.of(state.context).pop(RemoteLocation(
+      name: 'SMB 192.168.1.5',
+      host: '192.168.1.5',
+      type: 'smb',
+      port: 445,
+      share: 'Paylasim',
+    ));
+    // Sınırlı pump: geri dönüş animasyonu bitsin ama snackbar'ın otomatik
+    // kaybolması (4 sn) için zaman ilerlemesin.
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    expect(find.byType(LanScanScreen), findsNothing,
+        reason: 'Tarama ekranı kapanmış olmalı');
+    expect(find.text('SMB 192.168.1.5'), findsOneWidget,
+        reason: 'Konum ana listede görünmeli');
+    expect(find.textContaining('kaydedildi'), findsOneWidget,
+        reason: 'Kullanıcıya başarı geri bildirimi gösterilmeli');
+
+    final loaded = await RemoteLocationStore.load();
+    expect(loaded, hasLength(1),
+        reason:
+            'Taramadan eklenen konum KALICI olarak kaydedilmeli (persist)');
+    expect(loaded.first.type, 'smb');
+    expect(loaded.first.share, 'Paylasim');
+  });
 }
