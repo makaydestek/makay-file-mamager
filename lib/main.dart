@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -23,6 +25,7 @@ import 'screens/temp_cleaner_screen.dart';
 import 'screens/tv_home_screen.dart';
 import 'screens/usb_storage_screen.dart';
 import 'screens/vault_screen.dart';
+import 'services/category_size_service.dart';
 import 'services/media_service.dart';
 import 'services/platform_service.dart';
 import 'services/update_service.dart';
@@ -51,9 +54,15 @@ class MakayApp extends StatefulWidget {
   State<MakayApp> createState() => _MakayAppState();
 }
 
-class _MakayAppState extends State<MakayApp> {
+class _MakayAppState extends State<MakayApp> with WidgetsBindingObserver {
   /// Uygulama yaşam döngüsünde yalnızca bir kez sorgulanır.
   static bool _updateChecked = false;
+
+  /// Rota geri alındığında (ana ekrana dönüş dâhil) kart boyutlarını tazeler.
+  final _popRefresh = _PopRefreshObserver();
+
+  /// Uygulama ön plana döndüğünde (dışarıda yapılan indirmeler vb.) tazeler.
+  final _resumeRefresh = _ResumeRefreshObserver();
 
   /// Sürüm seçimi + izin onayı yeni tamamlandı mı?
   bool _setupDone = false;
@@ -65,11 +74,18 @@ class _MakayAppState extends State<MakayApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(_resumeRefresh);
     // Her açılışta GitHub depoda yeni sürüm sorgulanır (A15/A17).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupDone = _isSetupComplete(context.read<SettingsProvider>());
       _checkUpdate();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_resumeRefresh);
+    super.dispose();
   }
 
   Future<void> _checkUpdate() async {
@@ -137,6 +153,7 @@ class _MakayAppState extends State<MakayApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       onGenerateRoute: _onGenerateRoute,
+      navigatorObservers: [_popRefresh],
       initialRoute: '/',
       // "Büyük & Okunaklı" görünüm yazıları büyütür. Bu sürümde fontSize'lar
       // ThemeData'da taşınmadığı için büyüme, sistem ölçeği **korunarak**
@@ -154,6 +171,38 @@ class _MakayAppState extends State<MakayApp> {
         );
       },
     );
+  }
+}
+
+/// Rota geri alındığında (ana ekrana dönüş dâhil) kategori boyutlarını tazeler.
+///
+/// **Neden gerekli:** ana ekranın `build`'i üstüne ekran açılıp kapanınca
+/// yeniden çalışmaz; `initState` ise oturumda yalnız bir kez koşar. Eskiden
+/// bu yüzden dosya işlemleri / temizleme sonrası kartlar uygulama
+/// kapatılıp açılana kadar bayat değer gösterirdi.
+class _PopRefreshObserver extends NavigatorObserver {
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    unawaited(CategorySizeService.refresh());
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    unawaited(CategorySizeService.refresh());
+  }
+}
+
+/// Uygulama ön plana döndüğünde kategori boyutlarını tazeler.
+///
+/// İndirme gibi **başka uygulamalarca** yapılan değişiklikler invalidate
+/// edilemez; kartların tazeliği ancak uygulamaya geri dönülürken
+/// ([CategorySizeService.refreshOnResume]) sağlanır.
+class _ResumeRefreshObserver with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(CategorySizeService.refreshOnResume());
+    }
   }
 }
 

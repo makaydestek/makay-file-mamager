@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -158,10 +157,9 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
       _selected.clear();
     });
     // "Temizleme" yalnız listeyi boşaltır ama Ana Sayfa'daki "Yeni Dosyalar"
-    // kartındaki boyutun da bunu izlemesi gerekir: önbellek silinip yeniden
-    // hesaplanır (artık temizlenen dosyalar sayılmaz).
+    // kartındaki boyutun da bunu izlemesi gerekir: invalidate önbelleği
+    // silip kendiliğinden taze hesap da tetikler.
     await CategorySizeService.invalidate();
-    unawaited(CategorySizeService.refresh(force: true));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Liste temizlendi — dosyalarınız silinmedi')),
@@ -179,7 +177,6 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
     if (!mounted) return;
     // Geçmiş geri geldi: Ana Sayfa'daki "Yeni Dosyalar" boyutu da tazelenir.
     await CategorySizeService.invalidate();
-    unawaited(CategorySizeService.refresh(force: true));
     if (!mounted) return;
     await _load();
   }
@@ -374,7 +371,6 @@ class _RecentFilesScreenState extends State<RecentFilesScreen>
     });
     // Ana Sayfa'daki "Yeni Dosyalar" boyutu silinen dosyaları izlemeli.
     await CategorySizeService.invalidate();
-    unawaited(CategorySizeService.refresh(force: true));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$done dosya ${useBin ? 'geri dönüşüm kutusuna taşındı' : 'silindi'}')),

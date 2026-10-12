@@ -41,6 +41,21 @@ void main() {
     expect(CategorySizeService.dirSize('$base${sep}BoyleBirKlasor'), 0);
   });
 
+  test('dirSize(skipHidden) gizli dosyaları atlar; kart ekranla aynı',
+      () {
+    final sep = Platform.pathSeparator;
+    _write('$base${sep}Download$sep.gizli', 40);
+    expect(CategorySizeService.dirSize('$base${sep}Download'), 233,
+        reason: 'varsayılan: gizli dosyalar dâhil');
+    expect(CategorySizeService.dirSize('$base${sep}Download', skipHidden: true),
+        193,
+        reason: 'kart, Belgeler/İndirilenler ekranının gizli gizleyen '
+            'varsayılan görünümüyle aynı toplamı verir');
+
+    final sizes = CategorySizeService.scan(base);
+    expect(sizes['downloads'], 193, reason: 'scan gizliyi kartlara almaz');
+  });
+
   test('scan kategori başına toplamları hesaplar', () {
     final sizes = CategorySizeService.scan(base);
 
@@ -50,10 +65,28 @@ void main() {
         reason: 'DCIM (25) + Pictures (50) + Download içindeki png (11)');
     expect(sizes['videos'], 40);
     expect(sizes['audio'], 10);
-    // Belgeler yalnız Documents klasörüyle sınırlı DEĞİLDİR: kullanıcı
-    // Download içindeki metin/PDF dosyalarını da "Belgeler" sayar.
-    expect(sizes['documents'], 212,
-        reason: 'Documents/d.pdf (30) + Download txt dosyaları (100+5+77)');
+    // Belgeler kartı, Belgeler EKRANININ açtığı Documents klasörünü sayar:
+    // Download içindeki metin/PDF dosyaları o ekranda görünmediği için
+    // karta da girmez (saha şikâyeti: ekran "Boş Klasör" derken kart
+    // 158 KB gösteriyordu).
+    expect(sizes['documents'], 30,
+        reason: 'yalnız Documents/d.pdf; Download txt dosyaları hariç');
+  });
+
+  test('Belgeler ekranı boşken kart da 0 verir', () {
+    final sep = Platform.pathSeparator;
+    // Documents olmayan ama doc uzantılı dosyalar barındıran bir kök:
+    final temp = Directory.systemTemp.createTempSync('cat_empty_');
+    addTearDown(() {
+      if (temp.existsSync()) temp.deleteSync(recursive: true);
+    });
+    _write('${temp.path}${sep}Download${sep}notlar.txt', 4096);
+
+    final sizes = CategorySizeService.scan(temp.path);
+    expect(sizes['documents'], 0,
+        reason: 'boş Belgeler klasörü → kart 0; ekranla aynı');
+    expect(sizes['downloads'], 4096,
+        reason: 'İndirilenler klasör içeriği ekranla aynı');
   });
 
   test('classifySizes dosyayı yalnız bir kategoriye yazar', () {
@@ -61,8 +94,10 @@ void main() {
     final sum = totals.values.fold<int>(0, (a, b) => a + b);
     // Download/eklenti.png hem downloads hem images toplamına girer; burada
     // ise tek bir kategoriye yazıldığı için toplam şişmez.
-    expect(sum, 86 + 40 + 10 + 212);
+    expect(sum, 86 + 40 + 10);
     expect(totals['images'], 86);
+    // Belgeler/İndirilenler sınıflandırmaya girmez (doğrudan klasör boyutu).
+    expect(totals.containsKey('documents'), isFalse);
   });
 
   test('categoryOfExtension uzantıları doğru kategoriye ayırır', () {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -17,6 +18,22 @@ import 'webdav_service.dart';
 /// Tüm tarama işi izolatta (arka plan) yürütülür; sonuç önbelleğe alınır.
 /// Ekran ilk açıldığında önbellekteki değer anında gösterilir, taze hesap
 /// tamamlanınca başlıklar sessizce güncellenir.
+///
+/// **Tazelik garantileri** (saha şikâyetleri: kart ile ekran hiç uyuşmuyordu):
+///
+/// 1. Kart değeri, ilgili **ekranın gösterdiği dosyalarla** hesaplanır:
+///    İndirilenler → Download klasörü, Belgeler → Documents klasörü
+///    (uzantı sınıflandırması değil), Yeni Dosyalar → seen filtresi.
+/// 2. Ana ekranın build'i geri dönünçe yeniden çalışmadığı için tazelik
+///    yalnızca build'e bağlanmaz: rota geri alındığında (`main.dart`
+///    navigator gözlemcisi), uygulama ön plana döndüğünde ve her
+///    [invalidate] çağrısında yenileme tetiklenir.
+/// 3. Başarısız tarama **önbelleğe yazılmaz** (bayat değer "taze" diye
+///    damgalanıp 10 dakika boyunca ekranda kalmaz); kısa bir beklemeyle
+///    yeniden denenir.
+/// 4. İzolat zaman aşımına uğrursa [refresh] takılı kalmaz — aksi hâlde
+///    `_running` sonsuza dek true kalır ve hiçbir yenileme çalışmadan
+///    uygulama yeniden başlatılana kadar donmuş kartlar gösterilirdi.
 class CategorySizeService {
   CategorySizeService._();
 
@@ -27,7 +44,26 @@ class CategorySizeService {
   /// Dosya işlemleri (silme/taşıma/temizlik) [invalidate] ile önbelleği
   /// anında siler; bu süre yalnızca "değişiklik olmayan" durumlarda geçerli
   /// kalan bayatlık payıdır — bu yüzden kısa tutulur.
+  /// Dış kaynaklı değişiklikler (başka uygulamanın indirmesi) ayrıca
+  /// [refreshOnResume] ile uygulama ön plana döndüğünde yakalanır.
   static const cacheMaxAge = Duration(minutes: 10);
+
+  /// Başarısız taramanın yeniden denenmesi arasındaki bekleme.
+  ///
+  /// Tarama başarısızsa değerler bayat kalır; her kart gösteriminde tekrar
+  /// tekrar ağır tarama çalıştırmamak için kısa bir geri çekilme uygulanır.
+  /// "Yenile" (force) bu beklemeyi aşar.
+  static const failureBackoff = Duration(seconds: 30);
+
+  /// İzolat taraması için azami bekleme.
+  ///
+  /// Süre dolarsa izolat öldürülür ve tarama başarısız sayılır; [refresh]
+  /// asla bu süreden fazla `_running` durumunda kalmaz.
+  static const isolateTimeout = Duration(seconds: 90);
+
+  /// Uygulama ön plana döndüğünde taramanın en az ne kadar önce yapılmış
+  /// olması gerektiği (hızlı uygulama geçişlerinde gereksiz tarama yok).
+  static const resumeMinInterval = Duration(seconds: 60);
 
   /// Kategori kimliği → başlık altı metin (ör. "1,5 GB", "3 hesap").
   static final ValueNotifier<Map<String, String>> labels =
@@ -37,6 +73,25 @@ class CategorySizeService {
 
   /// Bir hesaplama sürerken gelen zorunlu istek (bkz. [refresh]).
   static bool _pendingForce = false;
+
+  /// [invalidate] sayaç: devam eden taramanın dünyası değişmişse sonucu
+  /// bayat saymak için kullanılır.
+  static int _generation = 0;
+
+  static DateTime? _lastSuccessAt;
+  static DateTime? _lastFailureAt;
+
+  /// Klasör taramasının ürettiği anahtarlar. Bu platformda tarama
+  /// yapılmazsa (masaüstü) ya da tarama başarısız olursa bu
+  /// anahtarların eski değerleri korunur.
+  static const _folderKeys = <String>{
+    'downloads',
+    'documents',
+    'images',
+    'videos',
+    'audio',
+    'recent',
+  };
 
   /// Tarama sürüyor mu (test/uyarı amaçlı).
   static bool get running => _running;
@@ -48,9 +103,13 @@ class CategorySizeService {
   /// kopyalama, temizleme). Yoksa ana ekran kartları 10 dakika boyunca
   /// silinmiş bir dosyanın boyutunu göstermeye devam ederdi.
   ///
-  /// Yalnızca önbelleği siler; hesap [refresh] çağrısında yapılır (ağır
-  /// tarama olduğundan her dosya işleminde hemen çalıştırılmaz).
+  /// Artık yalnız önbelleği silmekle kalmaz, kendiliğinden bir zorunlu
+  /// yenileme de tetikler: kartların tazelenmesi ana ekranın build'ine (ki
+  /// geri dönünçe yeniden çalışmaz) bağlı olmamalıdır. `force` sayesinde
+  /// daha önce başarısız bir taramanın geri çekilme (backoff) beklemesi de
+  /// aşılır — işlem sonrası kart bayat kalmaz.
   static Future<void> invalidate() async {
+    _generation++;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_cacheKey);
@@ -58,6 +117,7 @@ class CategorySizeService {
       // Önbellek silinemezse bayat değer bir sonraki açılışta tazelenir.
       logSwallowed('kategori boyutu: önbellek silme', e);
     }
+    unawaited(refresh(force: true));
   }
 
   /// Kategori özetlerini yükler; [force] ile önbellek atlanır.
@@ -70,8 +130,16 @@ class CategorySizeService {
       if (force) _pendingForce = true;
       return;
     }
+    // Son deneme başarısızdıysa kısa bir bekleme: her gösterimde ağır
+    // tarama tekrar tekrar çalışmasın (force bu gecikmeyi aşar).
+    if (!force &&
+        _lastFailureAt != null &&
+        DateTime.now().difference(_lastFailureAt!) < failureBackoff) {
+      return;
+    }
     _running = true;
     try {
+      final gen = _generation;
       final cached = await _readCache();
       if (cached != null) {
         labels.value = Map.unmodifiable(cached.$2);
@@ -79,16 +147,44 @@ class CategorySizeService {
             DateTime.now().difference(cached.$1) < cacheMaxAge;
         if (fresh && !force) return;
       }
-      final computed = await _compute();
-      // Kısmi sonuç (izin hatası, izolat düşüşü) ekrandaki değerleri
-      // SİLMEZ: yeni gelenlerle birleştirilir; hiç gelmediyse eskisi korunur.
-      if (computed.isEmpty) return;
-      final merged = <String, String>{...labels.value, ...computed};
-      await _writeCache(merged);
-      labels.value = Map.unmodifiable(merged);
+      final result = await _compute();
+
+      // Tarama sırasında dosya işlemi yapıldı (invalidate): sonuç bayattır,
+      // etiketlere/önbelleğe yazılmaz; bitiminde yeniden denenir.
+      if (gen != _generation) {
+        _pendingForce = true;
+        return;
+      }
+
+      // Alt sistem hatası ya da bu denemede üretilmeyen anahtar
+      // (masaüstünde klasör taraması, başarısız tarama) için
+      // yalnız o anahtarın eski değeri korunur; kalanı taze
+      // sonuçla değişir. Eski değerlerin GENELİ birleştirilmesi
+      // bayat anahtarları sonsuza dek yaşatırdı (hesap silinir
+      // "2 hesap" kalırdı) — bu yüzden ANAHTAR BAZINDA, yalnızca
+      // gerçekten üretilmeyenler devralınır.
+      final merged = <String, String>{...result.values};
+      final old = labels.value;
+      final stale = {...result.keepKeys, ...result.inheritedKeys};
+      for (final key in stale) {
+        final prev = old[key];
+        if (prev != null && !merged.containsKey(key)) merged[key] = prev;
+      }
+      if (merged.isNotEmpty) labels.value = Map.unmodifiable(merged);
+
+      if (!result.scanOk) {
+        // Klasör taraması başarısız: önbelleğe YAZILMAZ — bayat değer
+        // "taze" diye damgalanırsa 10 dakika boyunca tekrar denenmezdi.
+        _lastFailureAt = DateTime.now();
+        return;
+      }
+      _lastSuccessAt = DateTime.now();
+      _lastFailureAt = null;
+      if (merged.isNotEmpty) await _writeCache(merged);
     } catch (e) {
       // Boyut hesaplaması ana akışı asla bozmamalı; yutulduğu izlenebilsin.
       logSwallowed('kategori boyutu: yenileme', e);
+      _lastFailureAt = DateTime.now();
     } finally {
       _running = false;
       if (_pendingForce) {
@@ -98,20 +194,69 @@ class CategorySizeService {
     }
   }
 
-  /// Hesaplama: depolama bilgisi + klasör taraması + uygulama boyutları.
-  static Future<Map<String, String>> _compute() async {
+  /// Uygulama ön plana döndüğünde çağrılır (bkz. `main.dart` yaşam
+  /// döngüsü gözlemcisi).
+  ///
+  /// Dosya indirme gibi **dışarıda** yapılan değişiklikler invalidate
+  /// edilemez; bunlar ancak uygulamaya geri dönülürken tespit edilebilir.
+  /// Son hesaplama çok yeniyse (app'ler arası hızlı geçiş) tarama tekrar
+  /// edilmez.
+  static Future<void> refreshOnResume() async {
+    final last = _lastSuccessAt;
+    if (last != null &&
+        DateTime.now().difference(last) < resumeMinInterval) {
+      // Önbellek zaten taze; yalnız bayatlık payı dolduysa hesaplar.
+      return refresh();
+    }
+    return refresh(force: true);
+  }
+
+  // -------------------------------------------------------------------------
+  // Hesaplama
+  // -------------------------------------------------------------------------
+
+  /// Hesaplama sonucu.
+  ///
+  /// * [values] — bu denemede üretilebilen etiketler.
+  /// * [keepKeys] — alt sistem hatası nedeniyle **eski değeri korunması**
+  ///   gereken anahtarlar (ör. izin/geçici kanal hatasında depolama bilgisi).
+  /// * [inheritedKeys] — bu denemede **üretilmeyen** anahtarlar
+  ///   (bu platformda olmayan alt sistem: masaüstünde klasör
+  ///   taraması; ya da başarısız tarama). Eski değerleri korunur:
+  ///   boş/kısmi hesap ekranda olan etiketleri silemez.
+  /// * [scanOk] — klasör taraması başarılı mı; false ise önbelleğe
+  ///   yazılmaz (bkz. [refresh]).
+  static Future<
+      ({
+        Map<String, String> values,
+        Set<String> keepKeys,
+        Set<String> inheritedKeys,
+        bool scanOk,
+      })> _compute() async {
     final out = <String, String>{};
+    final keep = <String>{};
 
     // Ana bellek: kullanılan / toplam; Bellek Analizi: kalan boş alan.
-    final storage = await PlatformService.storageInfo();
-    if (storage != null && storage.total > 0) {
-      out['internal'] =
-          '${Formats.size(storage.total - storage.free)} / ${Formats.size(storage.total)}';
-      out['analysis'] = '${Formats.size(storage.free)} boş';
+    // Her alt sistem AYRI sarılır: birinin hatası klasör boyutlarını da
+    // yok etmemeli (eskiden tek exception tüm taramayı çöpe atıyordu).
+    try {
+      final storage = await PlatformService.storageInfo();
+      if (storage != null && storage.total > 0) {
+        out['internal'] =
+            '${Formats.size(storage.total - storage.free)} / ${Formats.size(storage.total)}';
+        out['analysis'] = '${Formats.size(storage.free)} boş';
+      } else {
+        keep.addAll(const ['internal', 'analysis']);
+      }
+    } catch (e) {
+      logSwallowed('kategori boyutu: depolama bilgisi', e);
+      keep.addAll(const ['internal', 'analysis']);
     }
 
     // Klasör bazlı boyutlar izolatta (arayüz donmadan) hesaplanır.
     // Kapanış gönderilmez; test/sanal alan Zone'larında bu hataya yol açar.
+    var scanOk = true;
+    final inherited = <String>{..._folderKeys};
     if (Platform.isAndroid) {
       const root = '/storage/emulated/0';
       // "Yeni Dosyalar" boyutu ekrandaki listeyle aynıdır: kullanıcının
@@ -125,49 +270,74 @@ class CategorySizeService {
         seen = const {};
       }
       final folder = await _scanInIsolate(root, seen);
-      for (final e in folder.entries) {
-        out[e.key] = Formats.size(e.value);
+      if (folder == null) {
+        scanOk = false; // bayat kartlar korunur, önbellek yazılmaz
+      } else {
+        // Tarama tüm klasör anahtarlarını üretti: eskileri devralma
+        // yok — 0 B gibi taze sıfırlar da ekrana yazılır.
+        inherited.clear();
+        for (final e in folder.entries) {
+          out[e.key] = Formats.size(e.value);
+        }
       }
 
       // Uygulamalar: yüklü paket boyutları toplamı.
-      final apps = await PlatformService.installedApps();
-      final appsBytes =
-          apps.fold<int>(0, (sum, a) => sum + (a.size > 0 ? a.size : 0));
-      if (appsBytes > 0) out['apps'] = Formats.size(appsBytes);
+      try {
+        final apps = await PlatformService.installedApps();
+        final appsBytes =
+            apps.fold<int>(0, (sum, a) => sum + (a.size > 0 ? a.size : 0));
+        if (appsBytes > 0) {
+          out['apps'] = Formats.size(appsBytes);
+        } else {
+          keep.add('apps'); // bilgi gelmedi: önceki değer korunur
+        }
+      } catch (e) {
+        logSwallowed('kategori boyutu: uygulama boyutları', e);
+        keep.add('apps');
+      }
     }
 
-    // Bağlantılı hesap sayıları (Bulut / Uzak).
+    // Bağlantılı hesap sayıları (Bulut / Uzak). Boşsa anahtar YOK sayılır
+    // (etiket kaybolur) — hesap silinince eski "2 hesap" etiketi kalmamalı.
     try {
       final clouds = await CloudLocationStore.load();
       if (clouds.isNotEmpty) out['cloud'] = '${clouds.length} hesap';
     } catch (e) {
       logSwallowed('kategori: bulut hesapları', e);
+      keep.add('cloud');
     }
     try {
       final remotes = await RemoteLocationStore.load();
       if (remotes.isNotEmpty) out['remote'] = '${remotes.length} bağlantı';
     } catch (e) {
       logSwallowed('kategori: uzak bağlantılar', e);
+      keep.add('remote');
     }
 
-    return out;
+    return (values: out, keepKeys: keep, inheritedKeys: inherited, scanOk: scanOk);
   }
 
   // -------------------------------------------------------------------------
   // İzolat çalıştırma
   // -------------------------------------------------------------------------
 
-  /// Taramayı izolatta çalıştırır; hata/erişilemeyen durumda boş harita.
+  /// Taramayı izolatta çalıştırır.
+  ///
+  /// Başarısızlık (izolat hatası, zaman aşımı, boş yanıt) durumunda **null**
+  /// döner; asla sınırsız beklemez. Eskiden yanıt gelmezse [refresh] içindeki
+  /// `port.first` sonsuza dek asılı kalır, `_running` true kalır ve uygulama
+  /// yeniden başlatılana kadar hiçbir kart güncellenmezdi.
   ///
   /// Kapanış (closure) göndermek yerine istek nesnesi gönderilir; çünkü test
   /// veya sanal alan gibi özel Zone'larda kapanış "gönderilemez" sayılır.
-  static Future<Map<String, int>> _scanInIsolate(
+  static Future<Map<String, int>?> _scanInIsolate(
     String root,
     Set<String> seenRecent,
   ) async {
     final port = ReceivePort();
+    Isolate? isolate;
     try {
-      await Isolate.spawn(
+      isolate = await Isolate.spawn(
         _scanIsolateEntry,
         _SizeScanRequest(
           root: root,
@@ -175,13 +345,21 @@ class CategorySizeService {
           reply: port.sendPort,
         ),
       );
-      final raw = await port.first;
-      if (raw is Map<String, int>) return raw;
-      return const {};
-    } catch (_) {
-      return const {};
+      final raw = await port.first.timeout(isolateTimeout);
+      // scan() her koşulda 6 anahtar döndürür; boş harita = hata sinyali.
+      if (raw is Map<String, int> && raw.isNotEmpty) return raw;
+      return null;
+    } on TimeoutException catch (e) {
+      logSwallowed('kategori boyutu: tarama zaman aşımı', e);
+      return null;
+    } catch (e) {
+      logSwallowed('kategori boyutu: izolat', e);
+      return null;
     } finally {
       port.close();
+      // Yanıt gelmişse izolat zaten bitmiştir; zaman aşımında ise
+      // askıda kalan işi sonlandırır (yanıt gelse de zararsızdır).
+      isolate?.kill(priority: Isolate.immediate);
     }
   }
 
@@ -189,12 +367,16 @@ class CategorySizeService {
   // İzolat içi tarama (yalnızca dart:io kullanır — channel/builder yok)
   // -------------------------------------------------------------------------
 
-  /// Taranan klasör kökleri (kategoriye göre dosyaların tamamı buradan gelir).
+  /// Taranan klasör kökleri (medya kategorilerinin boyutu buradan gelir).
   ///
   /// Resimler/Videolar/Ses ekranları MediaStore üzerinden **cihazın tamamını**
   /// listelediği için, karttaki boyut da yalnızca tek bir klasörü değil bu
   /// klasörlerin tamamını kapsar. Klasör adı geçen uygulamaların medyası
   /// (WhatsApp, Telegram, Instagram …) böylece kategori toplamına girer.
+  ///
+  /// **Belgeler ve İndirilenler bu listeden ayrıdır**: bu iki kartın
+  /// açtığı ekran klasör tarayıcısıdır (yalnızca Documents / Download),
+  /// bu yüzden boyutları da doğrudan o klasörün içeriğinden gelir.
   static const List<String> _scanFolders = [
     'Download',
     'DCIM',
@@ -221,9 +403,8 @@ class CategorySizeService {
 
   /// Dosya uzantısı → kategori kimliği; bilinmeyen uzantı null.
   ///
-  /// Bu sınıflandırma, dosyanın **hangi kategoride listeleneceğini** de
-  /// belirler; kategori ekranıyla karttaki toplam böylece aynı dosyaları
-  /// sayar (karışık klasörlerde bir dosya tek kategoriye girer).
+  /// Bu sınıflandırma yalnızca **medya kartları** (Resimler/Videolar/Ses)
+  /// için kullanılır; kart ekranla aynı dosyaları sayar.
   static String? categoryOfExtension(String ext) {
     switch (ext.toLowerCase()) {
       case 'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'bmp' || 'svg' ||
@@ -246,12 +427,15 @@ class CategorySizeService {
 
   /// Kategori kimliği → toplam bayt.
   ///
-  /// * `downloads` → `Download` klasörünün **içindeki her şey** (ekran da
-  ///   o klasörü açtığı için kart da onu gösterir).
-  /// * `images` / `videos` / `audio` / `documents` → yukarıdaki klasörlerde
-  ///   **uzantısına göre** sınıflandırılan dosyaların toplamı; böylece
-  ///   resim yalnız Resimler, video yalnız Videolar kartına yazılır ve
-  ///   toplamlar kategori ekranlarıyla örtüşür.
+  /// * `downloads` → `Download` klasörünün **içindeki her şey** (İndirilenler
+  ///   ekranı da o klasörü açar; gizli dosyalar kartta da gösterilmez —
+  ///   ekran varsayılanı gizli gizlemektir).
+  /// * `documents` → `Documents` klasörünün içeriği. **Belgeler ekranı bu
+  ///   klasörü açar**; klasör boşsa kart 0 gösterir (uzantı sınıflandırması
+  ///   başka klasörlerdeki metin/PDF'leri sayıp kartı şişiriyordu).
+  /// * `images` / `videos` / `audio` → yukarıdaki klasörlerde uzantısına
+  ///   göre sınıflandırılan medya dosyalarının toplamı (medya ekranları
+  ///   MediaStore ile cihazın tamamını listelediği için).
   /// * `recent` → son 7 günde değişen ve **henüz "Temizle" ile
   ///   işaretlenmemiş** dosyalar (ekranla birebir aynı).
   ///
@@ -264,16 +448,20 @@ class CategorySizeService {
   }) {
     final sep = Platform.pathSeparator;
     return {
-      'downloads': dirSize('$root${sep}Download'),
+      'downloads': dirSize('$root${sep}Download', skipHidden: true),
+      'documents': dirSize('$root${sep}Documents', skipHidden: true),
       ...classifySizes(root, maxEntries: maxEntries),
       'recent': recentSize(root, maxEntries: maxEntries, seen: seenRecent),
     };
   }
 
-  /// Klasörlerdeki dosyaları uzantısına göre kategorilere böler.
+  /// Klasörlerdeki dosyaları uzantısına göre **medya** kategorilerine böler.
   ///
-  /// Tek bir yürüyüşte her dosya **yalnızca bir** kategoriye yazılır; böylece
-  /// toplamlar şişmez ve Resimler/Videolar/Ses ayrımı doğru olur.
+  /// Tek bir yürüyüşte medya dosyası **yalnızca bir** kategoriye yazılır;
+  /// böylece toplamlar şişmez ve Resimler/Videolar/Ses ayrımı doğru olur.
+  ///
+  /// Belgeler/İndirilenler bu fonksiyona girmez (onlar doğrudan klasör
+  /// boyutudur — bkz. [scan]).
   @visibleForTesting
   static Map<String, int> classifySizes(
     String root, {
@@ -284,7 +472,6 @@ class CategorySizeService {
       'images': 0,
       'videos': 0,
       'audio': 0,
-      'documents': 0,
     };
     var visited = 0;
     final stack = <String>[
@@ -307,7 +494,9 @@ class CategorySizeService {
           stack.add(e.path);
         } else if (e is File) {
           final category = categoryOfExtension(_extensionOf(name));
-          if (category == null) continue;
+          // Yalnızca medya kategorileri burada toplanır; 'documents' vb.
+          // sınıflandırması kartların şişmesine yol açardı.
+          if (category == null || !totals.containsKey(category)) continue;
           try {
             totals[category] = totals[category]! + e.lengthSync();
           } catch (e) {
@@ -320,13 +509,18 @@ class CategorySizeService {
   }
 
   /// Klasörün özyinelemeli toplam boyutu (erişim hataları yutulur).
+  ///
+  /// [skipHidden] ile nokta ile başlayan dosya/klasörler sayılmaz; İndirilenler
+  /// ve Belgeler kartları ekranın varsayılan görünümüyle (gizli gizli) birebir
+  /// aynı toplamı verir.
   @visibleForTesting
-  static int dirSize(String path) {
+  static int dirSize(String path, {bool skipHidden = false}) {
     final dir = Directory(path);
     if (!dir.existsSync()) return 0;
     var total = 0;
     try {
       for (final e in dir.listSync(followLinks: false)) {
+        if (skipHidden && _nameOf(e.path).startsWith('.')) continue;
         if (e is File) {
           try {
             total += e.lengthSync();
@@ -334,7 +528,7 @@ class CategorySizeService {
             logSwallowed('kategori boyutu: dosya boyutu', e);
           }
         } else if (e is Directory) {
-          total += dirSize(e.path);
+          total += dirSize(e.path, skipHidden: skipHidden);
         }
       }
     } catch (e) {

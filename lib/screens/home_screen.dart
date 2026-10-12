@@ -54,10 +54,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Dosya işlemleri kategori önbelleğini siler (`CategorySizeService.
-    // invalidate`); tarayıcıdan / ana ekrandan geri dönüldüğünde build
-    // yeniden çalıştığı için bayat etiketler burada tazelenir. Önbellek
-    // tazeyse bu çağrı yalnızca prefs okur ve hemen döner.
+    // Tazelik artık build yaşam döngüsüne bağlı DEĞİLDİR: rota geri
+    // alındığında ve uygulama ön plana döndüğünde `main.dart` içindeki
+    // gözlemciler yenileme tetikler; dosya işlemleri `invalidate`
+    // aracılığıyla kendiliğinden yeniden hesaplatır. Bu çağrı yalnız
+    // ilk çerçeve ve döndürme gibi durumlar için güvenlik ağıdır; önbellek
+    // tazeyse yalnızca prefs okur ve hemen döner.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) CategorySizeService.refresh();
     });
