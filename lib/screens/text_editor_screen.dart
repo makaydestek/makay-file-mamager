@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../services/category_size_service.dart';
+
 /// Metin görüntüleyici/editörü: .txt/.md/.json/.xml/.csv/.log gibi düz
 /// metin dosyalarını açar, düzenler ve kaydeder.
 class TextEditorScreen extends StatefulWidget {
@@ -74,6 +76,9 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     try {
       await widget.file.writeAsString(_controller.text, flush: true);
       _original = _controller.text;
+      // Boyut değişti (ör. içerik tümüyle temizlenip 0 B oldu) → ana ekran
+      // kategori etiketleri bayat boyut göstermeye devam etmemeli.
+      await CategorySizeService.invalidate();
       if (!mounted) return;
       setState(() => _editing = false);
       ScaffoldMessenger.of(context).showSnackBar(

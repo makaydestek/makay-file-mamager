@@ -575,6 +575,71 @@ tam paket **184/184**.
 > sürümde çıkarıldığına dair tek doğrulanan kaynaktır: sürüm numaraları
 > git geçmişiyle eşleştirilemiyordu.
 
+### A24 — Depolama Bilgisi Doğruluğu (Sürüm 1.0.16 sonrası) ✅
+
+**Kullanıcı raporu**: "Yeni Dosyalar"da 630 MB'lık dosya içeriğinden
+temizlenince hâlâ 630 MB görünüyor; yeni eklenen 2 MB dosya da 630 MB
+görünüyordu.
+
+**Kök neden**: boyutlar **doğru hesaplanıyordu**, ama gösterilen değer
+bayattı. Üç ayrı yerde tazelik kopmuştu:
+
+1. `CategorySizeService` kategori önbelleğini **30 dakika** taze sayıyor ve
+   **hiçbir dosya işlemi önbelleği geçersiz kılmıyordu** → ana ekran kartı
+   silinmiş dosyanın boyutunu göstermeye devam ediyordu.
+2. `RecentFilesScreen`, dosyayı açıp geri dönünce ve uygulama öne çıkınca
+   **yeniden taramıyordu** → satırlar bayat kalıyordu.
+3. `refresh()` sürerken gelen zorunlu istek **yutuluyor** ve hesaptan dönen
+   **boş/kısmi** sonuç (izin hatası, izolat düşüşü) ekrandaki tüm değerleri
+   **siliyor** ve 30 dakika "taze" yazıyordu.
+
+**Düzeltmeler**
+
+- `CategorySizeService.invalidate()`: içerik değiştiren **her** işlem sonrası
+  önbelleği siler. Bağlandığı yerler: `FileService` (oluşturma, yeniden
+  adlandırma, kopyalama, taşıma, silme), `RecycleBinService` (taşıma, geri
+  yükleme, kalıcı silme, boşaltma), `DuplicateService.delete`,
+  `temp_cleaner_screen` (3 temizlik), `text_editor_screen._save` (dosya
+  içeriği düzenlenince), `vault_service.exportTo`.
+- Ana ekran (telefon + TV) her görünür olduğunda `refresh()` çağrır →
+  önbellek silindiyse bayat etiket anında tazelenir.
+- `RecentFilesScreen`: görüntüleyiciden dönünce ve uygulama öne çıkınca
+  tarama yenilenir (içerik temizlenmişse satır 0 B olur).
+- `refresh()`: sürerken gelen force istek artık **biriktirilip** hesap
+  bitiminde çalıştırılır; boş hesap sonucu etiketleri **silmez**, önceki
+  değerlerle birleştirilir ve önbelleğe **yazılmaz**; yutulan hatalar
+  `logSwallowed` ile izlenebilir. Önbellek ömrü 30 → **10 dk**.
+
+**Bulunan ve düzeltilen diğer boyut hataları**
+
+- **Dizin boyutu karışması**: `FileService.listDirectory` dizinler için
+  `stat.size` yazıyordu (Linux/Android'te bu **inode boyutudur**, 0 ya da
+  4096 B — içerik toplamı değildir) → klasörler çöpe taşınınca "0 B / 4,1 KB"
+  görünüyordu. Dizinler için artık 0 yazılır ve `RecycleBinService` içerik
+  toplamını taşınmadan önce ayrı hesaplar.
+- **Silmeden önce boyut sayımı**: `DuplicateService.delete` ve
+  `temp_cleaner_screen` boyutu silmeden **önce** ekliyordu → kilitli/silinemeyen
+  dosyanın boyutu da "kazanılan alan / temizlendi" rakamına giriyordu. Artık
+  boyut yalnızca silme **başarılıysa** sayılır.
+- **Bellek Analizi çift sayımı**: 'Arşivler' tüm kökü tarayıp `Download`
+  altındaki zip'i 'Belgeler'e de yazıyor; 'Diğerleri' ise WhatsApp'ın tamamını
+  sayıp 'Videolar'/'Ses' ile çakışıyordu → yüzde/treemap kullanılan alandan
+  büyük çıkabiliyordu. Kategoriler artık **karşılıklı dışlayıcı**;
+  'Arşivler' yalnızca diğer kategorilere girmeyen köklerde aranır ve
+  **'Diğerleri' = kullanılan alanın kalanı** alınır (toplam %100'ü aşmaz).
+- **Sınırlı örneğin toplamı**: "Büyük dosyalar" başlığındaki rakam en fazla
+  300 dosyalık (artık 2.000) örneğin toplamıydı ama gerçek toplam sanılıyordu;
+  alt başlıkta örnekleme açıkça belirtiliyor.
+
+**Testler**: `category_size_cache_test` (6 — silme/renamede önbellek silinir,
+okumalar bozmaz, boş hesap etiketleri silmez/önbelleğe yazılmaz, süren
+hesapta force yutulmaz). Analiz temiz, tam paket **190/190**.
+
+> **Not**: `ftp_server_test` "PWD, CWD, LIST ve RETR" testi paralel koşumda
+> seyrek biçimde başarısız olabiliyor (port/timing); tek başına hep geçiyor
+> ve FTP sunucusu `FileService`/`CategorySizeService` kullanmıyor — bilinen
+> kararsızlık, bu maddeden bağımsız.
+
 ## Riskler / Notlar
 - Android 11+ (API 30+) kapsamlı dosya erişimi için `MANAGE_EXTERNAL_STORAGE`
   izni gerekir — Play Store'da kısıtlı, APK yan yüklemeye uygun.

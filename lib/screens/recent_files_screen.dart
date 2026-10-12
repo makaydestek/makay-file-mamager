@@ -47,7 +47,8 @@ class RecentFilesScreen extends StatefulWidget {
   State<RecentFilesScreen> createState() => _RecentFilesScreenState();
 }
 
-class _RecentFilesScreenState extends State<RecentFilesScreen> {
+class _RecentFilesScreenState extends State<RecentFilesScreen>
+    with WidgetsBindingObserver {
   List<RecentFile>? _files;
 
   /// Kullanıcı listeyi "Temizle" ile boşalttı mı?
@@ -59,7 +60,22 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Uygulama öne çıkınca tarama yenilenir: kullanıcı buradan başka bir
+  /// ekranı (dosya düzenleyici vb.) açıp dosyayı silebilir ya da
+  /// değiştirebilir; liste eski boyutu göstermeye devam etmemeli.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) _load();
   }
 
   Future<void> _load() async {
@@ -239,28 +255,32 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
     );
   }
 
-  /// Dosya türüne göre önizleme; desteklenmeyen türde bilgi diyaloğu.
-  void _open(RecentFile f) {
+  /// Desteklenen türde önizleme; desteklenmeyen türde bilgi diyaloğu.
+  ///
+  /// Görüntüleyiciden **dönünce liste yeniden taranır**: kullanıcı içerik
+  /// ekranından dosyayı silebilir ya da değiştirebilir (boyut 0 B / yeni
+  /// boyut olur); liste bayat değeri göstermeye devam etmemeli.
+  Future<void> _open(RecentFile f) async {
     final ext =
         f.name.contains('.') ? f.name.split('.').last.toLowerCase() : '';
     final file = File(f.path);
     if (kImageExts.contains(ext)) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
             builder: (_) => ImageViewerScreen(file: file, title: f.name)),
       );
     } else if (kVideoExts.contains(ext)) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
             builder: (_) => MediaViewerScreen(file: file, isVideo: true)),
       );
     } else if (kAudioExts.contains(ext)) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
             builder: (_) => MediaViewerScreen(file: file, isVideo: false)),
       );
     } else {
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(f.name, maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -283,6 +303,8 @@ class _RecentFilesScreenState extends State<RecentFilesScreen> {
         ),
       );
     }
+    // Görünürken silinmiş/değiştirilmiş dosyalar için taze liste.
+    if (mounted) await _load();
   }
 }
 

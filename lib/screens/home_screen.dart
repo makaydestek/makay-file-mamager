@@ -53,6 +53,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Dosya işlemleri kategori önbelleğini siler (`CategorySizeService.
+    // invalidate`); tarayıcıdan / ana ekrandan geri dönüldüğünde build
+    // yeniden çalıştığı için bayat etiketler burada tazelenir. Önbellek
+    // tazeyse bu çağrı yalnızca prefs okur ve hemen döner.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) CategorySizeService.refresh();
+    });
     // Ayar değiştiğinde ızgara anında yeniden kurulur (watch → rebuild).
     final settings = context.watch<SettingsProvider>();
     final viewStyle = settings.viewStyle;

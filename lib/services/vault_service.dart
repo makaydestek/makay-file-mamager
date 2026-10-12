@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'category_size_service.dart';
+
 /// Kasadaki bir şifreli dosyanın açılır kaydı.
 class VaultEntry {
   const VaultEntry({
@@ -409,6 +411,8 @@ class VaultService {
     final target = File(
         '${dest.path}${Platform.pathSeparator}${_safeName(payload.name)}');
     await target.writeAsBytes(payload.content, flush: true);
+    // Dışa aktarma yeni bir dosya yaratır → kategori boyutları tazelenir.
+    await CategorySizeService.invalidate();
     return target;
   }
 

@@ -28,6 +28,11 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Dosya işlemleri kategori önbelleğini siler; ana ekrana her dönüşte
+    // bayat etiketler tazelenir (bkz. HomeScreen.build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) CategorySizeService.refresh();
+    });
     final theme = Theme.of(context);
     // Ayar değiştiğinde ızgara anında yeniden kurulur.
     final settings = context.watch<SettingsProvider>();

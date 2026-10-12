@@ -2,9 +2,15 @@ import 'dart:io';
 
 import '../models/file_entry.dart';
 import '../utils/debug_log.dart';
+import 'category_size_service.dart';
 import 'transfer.dart';
 
 /// Dosya sistemi okuma/yazma işlemleri.
+///
+/// İçerik değiştiren her işlem (oluşturma, yeniden adlandırma, kopyalama,
+/// taşıma, silme) sonunda `CategorySizeService.invalidate()` çağrılır; yoksa
+/// ana ekran kategori etiketleri dosya işleminden sonra bayat boyut
+/// göstermeye devam ederdi.
 class FileService {
   const FileService();
 
@@ -40,7 +46,12 @@ class FileService {
           name: cleanName,
           path: entity.path,
           isDirectory: entity is Directory,
-          size: stat.size,
+          // Dizin için `stat.size` **içerik toplamı değildir**: Linux/Android'te
+          // dizin inode boyutudur (0 ya da 4096 B). Tarayıcıda zaten "Klasör"
+          // gösterildiği ve bilgi diyaloğunda `directorySize` ayrıca
+          // hesaplandığı için burada dürüst olan 0 yazılır — aksi halde
+          // geri dönüşüm kutusu klasörleri "0 B / 4,1 KB" gösterirdi.
+          size: entity is Directory ? 0 : stat.size,
           modified: stat.modified,
         ));
       } catch (_) {
@@ -108,7 +119,10 @@ class FileService {
     return (files: files, bytes: bytes);
   }
 
-  Future<void> createDirectory(String path) => Directory(path).create();
+  Future<void> createDirectory(String path) async {
+    await Directory(path).create();
+    await CategorySizeService.invalidate();
+  }
 
   Future<void> rename(String path, String newName) async {
     final entity = FileSystemEntity.isDirectorySync(path)
@@ -116,6 +130,7 @@ class FileService {
         : File(path);
     final parent = entity.parent.path;
     await entity.rename('$parent${Platform.pathSeparator}$newName');
+    await CategorySizeService.invalidate();
   }
 
   Future<TransferResult> copyEntry(
@@ -197,6 +212,9 @@ class FileService {
         await _deleteQuietly(target);
       }
       rethrow;
+    } finally {
+      // Tamamlansın ya da iptal edilsin: içerik değişti.
+      await CategorySizeService.invalidate();
     }
 
     session.report(force: true);
@@ -267,6 +285,8 @@ class FileService {
       );
       await deleteEntry(source, useRecycleBin: false);
       return result;
+    } finally {
+      await CategorySizeService.invalidate();
     }
   }
 
@@ -284,6 +304,7 @@ class FileService {
     } else {
       await entity.delete();
     }
+    await CategorySizeService.invalidate();
   }
 
   // -------------------------------------------------------------------

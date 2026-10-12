@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../models/file_entry.dart';
 import '../utils/debug_log.dart';
+import 'platform_service.dart';
 
 /// Kategori kırılımı: kategori adı → toplam boyut (bayt).
 typedef CategoryBreakdown = Map<String, int>;
@@ -14,6 +15,12 @@ class AnalysisService {
   const AnalysisService();
 
   /// Kategori bazlı depolama dağılımı.
+  ///
+  /// Kategoriler **karşılıklı dışlayıcıdır**: bir dosya en fazla tek
+  /// kategoriye girer. Aksi halde yüzde/treemap toplamı kullanılan alandan
+  /// büyük çıkardı (ör. `Download` altındaki bir hem "Belgeler" hem
+  /// "Arşivler", `WhatsApp/Media/WhatsApp Video` altındaki hem "Videolar" hem
+  /// "Diğerleri" sayılıyordu).
   Future<CategoryBreakdown> categoryBreakdown() async {
     final result = <String, int>{};
 
@@ -27,10 +34,36 @@ class AnalysisService {
           await _dirSize('$root/WhatsApp/Media/WhatsApp Audio');
       result['Belgeler'] = await _dirSize('$root/Documents') +
           await _dirSize('$root/Download');
-      result['Arşivler'] = await _scanArchives(Directory(root), depth: 3);
-      result['Diğerleri'] = await _dirSize('$root/Android') +
-          await _dirSize('$root/WhatsApp') +
-          await _dirSize('$root/Telegram');
+      // Arşivler: yukarıdaki kategorilere GİRMEYEN köklerde aranır; böylece
+      // bir .zip hem "Belgeler" hem "Arşivler" kategorisine girmez.
+      result['Arşivler'] = await _scanArchives(
+        Directory(root),
+        depth: 3,
+        exclude: const [
+          'DCIM',
+          'Pictures',
+          'Movies',
+          'Music',
+          'Documents',
+          'Download',
+          'WhatsApp',
+          'Telegram',
+          'Android',
+        ],
+      );
+
+      // "Diğerleri": kullanılan alanın kalanı.
+      //
+      // Sabit bir klasör listesiyle tahmin edilmez; bu yüzden hiçbir şey
+      // iki kez sayılmaz ve toplam hiçbir zaman kullanılan alandan büyük
+      // çıkmaz. Depolama bilgisi alınamazsa (izin yok) kalan 0 olur.
+      final storage = await PlatformService.storageInfo();
+      final used = (storage != null && storage.total > 0)
+          ? storage.total - storage.free
+          : 0;
+      final counted = result.values.fold<int>(0, (sum, v) => sum + v);
+      result['Diğerleri'] =
+          used > counted ? used - counted : 0;
     } else {
       result
         ..putIfAbsent('Resimler', () => 0)
@@ -62,7 +95,13 @@ class AnalysisService {
     return total;
   }
 
-  Future<int> _scanArchives(Directory root, {int depth = 3}) async {
+  /// Kökten itibaren arşiv uzantılı dosyaların toplam boyutu.
+  ///
+  /// [exclude] adlı kök klasörler yürüyüşe alınmaz: bu klasörler zaten
+  /// başka kategorilere (Resimler/Videolar/Ses/Belgeler) ait olduğu için
+  /// arşivleri burada saymak çift sayıma yol açardı.
+  Future<int> _scanArchives(Directory root,
+      {int depth = 3, List<String> exclude = const []}) async {
     var total = 0;
     const exts = {'.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz'};
     Future<void> walk(Directory dir, int left) async {
@@ -83,6 +122,7 @@ class AnalysisService {
                 ? ''
                 : e.uri.pathSegments[e.uri.pathSegments.length - 2];
             if (name == 'Android' || name.startsWith('.')) continue;
+            if (exclude.contains(name)) continue;
             await walk(e, left - 1);
           }
         }

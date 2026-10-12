@@ -26,7 +26,7 @@ tüm özellikler her kullanıcıya açıktır:
 | İlk açılış seçimi | Mobil-Tablet veya TV sürümünü seç; ayarlar otomatik uygulanır |
 | İzin onayı | Dosya/medya izinleri kullanıcıdan istenir; onaysız açılmaz |
 | Görünüm stili | Otomatik / Dengeli / Geniş / Sık — dikey-yatay sütun sayısı seçilebilir |
-| Kategori boyutları | Ana ekran kartlarında başlık altında özet boyut (arka planda hesaplanır) |
+| Kategori boyutları | Ana ekran kartlarında başlık altında özet boyut (arka planda hesaplanır; dosya işlemleri sonrası tazelenir) |
 | Kartları göster / gizle | İstemediğiniz ana ekran kartlarını gizleyin (ayarlar veya ana ekran menüsünden) |
 | Mükerrer dosyalar | Aynı içeriğe sahip kopyaları bulma, tek kopya bırakıp temizleme |
 | Görsel harita | Bellek analizinde treemap ile kategori alanlarının görselleştirilmesi |

@@ -22,7 +22,11 @@ class CategorySizeService {
   static const _cacheKey = 'category_sizes_cache';
 
   /// Önbelleğin taze sayıldığı süre; dolarsa yeniden hesaplanır.
-  static const cacheMaxAge = Duration(minutes: 30);
+  ///
+  /// Dosya işlemleri (silme/taşıma/temizlik) [invalidate] ile önbelleği
+  /// anında siler; bu süre yalnızca "değişiklik olmayan" durumlarda geçerli
+  /// kalan bayatlık payıdır — bu yüzden kısa tutulur.
+  static const cacheMaxAge = Duration(minutes: 10);
 
   /// Kategori kimliği → başlık altı metin (ör. "1,5 GB", "3 hesap").
   static final ValueNotifier<Map<String, String>> labels =
@@ -30,12 +34,41 @@ class CategorySizeService {
 
   static bool _running = false;
 
+  /// Bir hesaplama sürerken gelen zorunlu istek (bkz. [refresh]).
+  static bool _pendingForce = false;
+
   /// Tarama sürüyor mu (test/uyarı amaçlı).
   static bool get running => _running;
 
+  /// Önbelleği geçersiz kılar: bir sonraki [refresh] bayatlık payına
+  /// bakılmaksızın yeniden hesaplar.
+  ///
+  /// **Dosya değiştiren her işlem sonrası çağrılır** (silme, taşıma,
+  /// kopyalama, temizleme). Yoksa ana ekran kartları 10 dakika boyunca
+  /// silinmiş bir dosyanın boyutunu göstermeye devam ederdi.
+  ///
+  /// Yalnızca önbelleği siler; hesap [refresh] çağrısında yapılır (ağır
+  /// tarama olduğundan her dosya işleminde hemen çalıştırılmaz).
+  static Future<void> invalidate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cacheKey);
+    } catch (e) {
+      // Önbellek silinemezse bayat değer bir sonraki açılışta tazelenir.
+      logSwallowed('kategori boyutu: önbellek silme', e);
+    }
+  }
+
   /// Kategori özetlerini yükler; [force] ile önbellek atlanır.
+  ///
+  /// Hesaplama sürerken gelen zorunlu istek **yutulmaz**: bir sonraki
+  /// hesap bitiminde yeniden çalıştırılır. Yoksa kullanıcı "Yenile" dese
+  /// bile bayat etiket değişmezdi.
   static Future<void> refresh({bool force = false}) async {
-    if (_running) return;
+    if (_running) {
+      if (force) _pendingForce = true;
+      return;
+    }
     _running = true;
     try {
       final cached = await _readCache();
@@ -46,12 +79,21 @@ class CategorySizeService {
         if (fresh && !force) return;
       }
       final computed = await _compute();
-      await _writeCache(computed);
-      labels.value = Map.unmodifiable(computed);
-    } catch (_) {
-      // Boyut hesaplaması ana akışı asla bozmamalı.
+      // Kısmi sonuç (izin hatası, izolat düşüşü) ekrandaki değerleri
+      // SİLMEZ: yeni gelenlerle birleştirilir; hiç gelmediyse eskisi korunur.
+      if (computed.isEmpty) return;
+      final merged = <String, String>{...labels.value, ...computed};
+      await _writeCache(merged);
+      labels.value = Map.unmodifiable(merged);
+    } catch (e) {
+      // Boyut hesaplaması ana akışı asla bozmamalı; yutulduğu izlenebilsin.
+      logSwallowed('kategori boyutu: yenileme', e);
     } finally {
       _running = false;
+      if (_pendingForce) {
+        _pendingForce = false;
+        await refresh(force: true);
+      }
     }
   }
 

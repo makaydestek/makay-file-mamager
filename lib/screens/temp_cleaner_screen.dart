@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
+import '../services/category_size_service.dart';
 
 /// Geçici dosyalar ekranı: uygulama önbelleği, küçük resim (.thumbnails)
 /// önbelleği ve .tmp/.part gibi yarıda kalmış dosyaların temizliği.
@@ -164,14 +165,19 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
     var freed = 0;
     for (final f in files) {
       try {
-        freed += f.lengthSync();
+        // Boyut silme başarılı olduktan sonra sayılır: kilitli bir dosyanın
+        // boyutu "temizlendi" rakamına girerse gösterilen alan gerçekle
+        // eşleşmezdi.
+        final length = f.lengthSync();
         await f.delete();
+        freed += length;
       } catch (_) {
         // Dosya kilitli ya da az önce silinmiş olabilir; temizlik kısmen
         // başarısız sayılır ve kalan dosyalar temizlenmeye devam eder.
       }
     }
     await _scan();
+    await CategorySizeService.invalidate();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${Formats.size(freed)} alan temizlendi')),
@@ -189,14 +195,17 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
       var freed = 0;
       for (final e in files) {
         try {
-          if (e is File) freed += e.lengthSync();
+          // Boyut yalnızca silme sonrası sayılır (bkz. _deleteAll).
+          final length = e is File ? e.lengthSync() : 0;
           await e.delete(recursive: true);
+          freed += length;
         } catch (_) {
           // Önbellek girdisi kullanımda ya da az önce kaldırılmış olabilir;
           // temizlik kısmen başarısız sayılır, sonraki tama düzeltir.
         }
       }
       await _scan();
+      await CategorySizeService.invalidate();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${Formats.size(freed)} önbellek temizlendi')),
@@ -217,8 +226,10 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
       if (dir.existsSync()) {
         for (final e in dir.listSync(followLinks: false)) {
           try {
-            if (e is File) freed += e.lengthSync();
+            // Boyut silme sonrası sayılır (bkz. _deleteAll).
+            final length = e is File ? e.lengthSync() : 0;
             await e.delete(recursive: true);
+            freed += length;
           } catch (_) {
             // Küçük resim dosyası sistem tarafından kullanımda olabilir;
             // erişilemeyen öbek atlanır, diğerleri silinmeye devam eder.
@@ -226,6 +237,7 @@ class _TempCleanerScreenState extends State<TempCleanerScreen> {
         }
       }
       await _scan();
+      await CategorySizeService.invalidate();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${Formats.size(freed)} temizlendi')),

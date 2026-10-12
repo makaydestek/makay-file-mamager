@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/file_entry.dart';
+import 'category_size_service.dart';
+import 'file_service.dart';
 
 /// Geri dönüşüm kutusu öğesi (manifest kaydı).
 class RecycleItem {
@@ -88,6 +90,18 @@ class RecycleBinService {
 
   /// Dosyayı/klasörü geri dönüşüm kutusuna taşır.
   Future<void> moveToRecycle(FileEntry entry) async {
+    // Dizin için [FileEntry.size] bir içerik boyutu DEĞİLDİR: `stat.size`
+    // dizinlerde inode boyutudur (0 ya da 4096 B). Kutudaki ve çekmecedeki
+    // "Toplam"ın doğru olması için içerik toplamı taşınmadan önce hesaplanır.
+    var size = entry.size;
+    if (entry.isDirectory) {
+      try {
+        size = await const FileService().directorySize(entry.path);
+      } catch (_) {
+        size = 0;
+      }
+    }
+
     final bin = await _binDir();
     final stamp = DateTime.now().millisecondsSinceEpoch;
     final storedName = '${stamp}__${entry.name}';
@@ -109,12 +123,13 @@ class RecycleBinService {
         storedName: storedName,
         originalPath: entry.path,
         name: entry.name,
-        size: entry.size,
+        size: size,
         isDirectory: entry.isDirectory,
         deletedAt: DateTime.now(),
       ),
     );
     await _save();
+    await CategorySizeService.invalidate();
   }
 
   /// Kutudan geri yükler: özgün konumuna döner.
@@ -145,6 +160,7 @@ class RecycleBinService {
     }
     _items.remove(item);
     await _save();
+    await CategorySizeService.invalidate();
   }
 
   Future<void> deletePermanently(RecycleItem item) async {
@@ -159,6 +175,7 @@ class RecycleBinService {
     }
     _items.remove(item);
     await _save();
+    await CategorySizeService.invalidate();
   }
 
   Future<void> empty() async {
@@ -181,6 +198,7 @@ class RecycleBinService {
     }
     _items.clear();
     await _save();
+    await CategorySizeService.invalidate();
   }
 
   /// Kutudaki toplam boyut.

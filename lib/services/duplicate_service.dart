@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../utils/debug_log.dart';
+import 'category_size_service.dart';
 
 /// Aynı içeriğe sahip 2 veya daha fazla dosyalık mükerrer grup.
 class DuplicateGroup {
@@ -88,13 +89,19 @@ class DuplicateService {
     for (final path in paths) {
       try {
         final file = File(path);
-        freed += await file.length();
+        // Boyut yalnızca silme BAŞARILI olduktan sonra eklenir: kilitli ya da
+        // erişime kapalı bir dosyanın boyutu "kazanılan alan"a girerse
+        // kullanıcıya gösterilen rakam diskte gerçekten kazanılandan büyük
+        // olurdu.
+        final length = await file.length();
         await file.delete();
+        freed += length;
       } catch (_) {
-        // Dosya önceden silinmiş ya da erişime kapalı olabilir; kazanılan
-        // alan kısmen sayılır, diğer dosyalar silinmeye devam eder.
+        // Dosya önceden silinmiş ya da erişime kapalı olabilir; bu durumda
+        // boyut sayılmaz ve diğer dosyalar silinmeye devam eder.
       }
     }
+    if (freed > 0) await CategorySizeService.invalidate();
     return freed;
   }
 }

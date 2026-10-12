@@ -21,6 +21,14 @@ class StorageAnalysisScreen extends StatefulWidget {
 class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
   static const _analysis = AnalysisService();
 
+  /// "Büyük dosyalar" başlığındaki toplamın hesaplandığı üst sınır.
+  ///
+  /// Tarama tüm diski özyinelemeli gezer; sınırsız yapılsaydı ekran
+  /// dakikalarca açılmayı beklerdi. Bu yüzden başlıktaki rakam yalnızca
+  /// [kLargeSample] dosyalık örneğin toplamıdır ve alt başlıkta böyle
+  /// belirtilir — eskiden sınırsız bir "gerçek toplam" izlenimi veriyordu.
+  static const int kLargeSample = 2000;
+
   ({int total, int free})? _storage;
   Map<String, int> _breakdown = {};
   List<InstalledApp> _topApps = [];
@@ -41,7 +49,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
     final storage = await PlatformService.storageInfo();
     final breakdown = await _analysis.categoryBreakdown();
     final apps = await PlatformService.installedApps();
-    final large = await _analysis.largeFiles();
+    final large = await _analysis.largeFiles(limit: kLargeSample);
     final cache = await _analysis.cacheSize();
 
     apps.sort((a, b) => b.size.compareTo(a.size));
@@ -285,7 +293,8 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            Text("10 MB'dan büyük dosyalar",
+            Text("10 MB'dan büyük dosyalar • en büyük "
+                "$kLargeSample dosyanın toplamı",
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.outline)),
             const SizedBox(height: 8),
