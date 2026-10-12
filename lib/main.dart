@@ -120,8 +120,14 @@ class _MakayAppState extends State<MakayApp> {
       title: 'Makay Dosya Yöneticisi',
       debugShowCheckedModeBanner: false,
       navigatorKey: rootNavigatorKey,
-      theme: AppTheme.light(dynamicSeed: seed?.light),
-      darkTheme: AppTheme.dark(dynamicSeed: seed?.dark),
+      theme: AppTheme.light(
+        dynamicSeed: seed?.light,
+        appearance: settings.appearance,
+      ),
+      darkTheme: AppTheme.dark(
+        dynamicSeed: seed?.dark,
+        appearance: settings.appearance,
+      ),
       themeMode: settings.themeMode,
       locale: const Locale('tr'),
       supportedLocales: const [Locale('tr'), Locale('en')],
@@ -132,6 +138,21 @@ class _MakayAppState extends State<MakayApp> {
       ],
       onGenerateRoute: _onGenerateRoute,
       initialRoute: '/',
+      // "Büyük & Okunaklı" görünüm yazıları büyütür. Bu sürümde fontSize'lar
+      // ThemeData'da taşınmadığı için büyüme, sistem ölçeği **korunarak**
+      // (erişilebilirlik ayarı ezilmez) yalnızca katsayıyla çarpılan
+      // `textScaler` üzerinden uygulanır.
+      builder: (context, child) {
+        final factor = settings.appearance.fontSizeFactor;
+        if (factor == 1.0) return child!;
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: TextScaler.linear(media.textScaler.scale(1.0) * factor),
+          ),
+          child: child!,
+        );
+      },
     );
   }
 }

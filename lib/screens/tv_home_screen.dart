@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/home_category.dart';
 import '../providers/settings_provider.dart';
 import '../services/category_size_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_drawer.dart';
 import 'home_categories_screen.dart';
 
@@ -64,7 +65,15 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
           ),
         ],
       ),
-      body: Column(
+      // Görünüm preset'i gradyan zemin çizebilir (bkz. home_screen).
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: AppTheme.backgroundGradient(
+            settings.appearance,
+            Theme.of(context).brightness,
+          ),
+        ),
+        child: Column(
         children: [
           const SizedBox(height: 12),
           // Odaklanan kartın adı büyük gösterilir.
@@ -155,6 +164,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

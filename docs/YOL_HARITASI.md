@@ -703,6 +703,44 @@ ayarının `false` yapılmaması gerekir (false, photo_manager'ı KGP'ye geri
 döndürür); ayrıca `kotlin.incremental=false` ayarı Windows'ta bilinen bir
 Gradle kilitlenmesi nedeniyle korunuyor.
 
+### A27 — Görünüm Preset'leri (Tema'dan Bağımsız Görsel Tarz) ✅
+
+Kullanıcı önerisi: Tema seçimi yalnızca zemini değiştiriyordu; yazı fontu,
+ikonlar ve arka plan da seçimle değişmeli.
+
+**Tasarım**: Yeni `AppAppearance` enum'u (`lib/theme/app_appearance.dart`) —
+5 preset; **Tema** (açık/koyu/sistem) ile **bağımsız** iki boyut:
+
+| Preset | Yazı | İkon | Köşe | Zemin/gradyan |
+|---|---|---|---|---|
+| **Klasik** | platform | standart | 12 | düz (mevcut davranış) |
+| **Sade & İnce** | +harf/satır aralığı | ince (300), dolgusuz | 6 | soluk gradyan |
+| **Canlı & Yuvarlak** | sıkı harf aralığı | kalın (700), dolu | 20 | renkli gradyan |
+| **Teknolojik** | **monospace** | keskin (72 optical) | 4 | camgöbeği gradyan |
+| **Büyük & Okunaklı** | **×1.15 ölçek** + yüksek kontrast | iri (28) | 10 | düz, yüksek kontrast |
+
+- Her preset kendi `ColorScheme`'ini üretir (`DynamicSchemeVariant`:
+  neutral/vibrant/expressive/fidelity + `contrastLevel`); **dinamik Material
+  You rengi yalnız Klasik'te** dikkate alınır (diğer tarzlar ezilmesin).
+- **Yazı boyutu** bu Flutter sürümünde `ThemeData`'da taşınmadığı için
+  (`textTheme` fontSize'ları null) büyüme `MaterialApp.builder`'daki
+  `MediaQuery.textScaler` ile uygulanır — sistem ölçeği korunarak çarpılır.
+  Yazı ailesi `_textTheme` içinde `TextTheme.apply(fontFamily:)` ile.
+- **İkon stili** `IconThemeData(fill, weight, opticalSize, size)` ile
+  Material Symbols gliflerine yansır — tüm uygulamadaki ikonlar tek seçimle
+  değişir.
+- **Gradyan zemin** yalnız **ana ekranda** (telefon + TV) `DecoratedBox`
+  ile çizilir; `gradient == null` ise hiçbir şey değişmez. Diğer ekranlar
+  preset'in zemin rengini kullanır.
+- **Ayarlar → Görünüm**: önizlemeli seçim diyaloğu
+  (`lib/widgets/appearance_picker.dart`) — her preset'in renk, köşe, ikon ve
+  yazı örneği gerçek temayla üretilir; seçim kalıcı (`appearance` tercihi).
+
+**Doğrulama**: `flutter analyze` temiz ✅, **204/204 test** ✅
+(`test/app_appearance_test.dart` + `test/appearance_picker_test.dart`;
+regresyon: Klasik, eski görünümün aynısı — turkuaz vurgu, 12px köşe, düz
+zemin).
+
 ## Riskler / Notlar
 - **photo_manager KGP uyarısı** (Android build çıktısı): yanlış pozitif —
   `android/gradle.properties` içindeki `android.builtInKotlin=true`

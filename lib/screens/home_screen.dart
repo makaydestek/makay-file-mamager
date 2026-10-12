@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/home_category.dart';
 import '../providers/settings_provider.dart';
 import '../services/category_size_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_drawer.dart';
 import 'home_categories_screen.dart';
 
@@ -102,13 +103,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: categories.isEmpty
-          ? _AllHidden(onOpen: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const HomeCategoriesScreen(),
-                ),
-              ))
-          : LayoutBuilder(
+      // Görünüm preset'i ana ekranda gradyan zemin çizebilir (bkz.
+      // AppAppearance.backgroundGradient); preset düz zemin seçtiyse
+      // gradient null olur ve hiçbir şey değişmez.
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: AppTheme.backgroundGradient(
+            settings.appearance,
+            Theme.of(context).brightness,
+          ),
+        ),
+        child: categories.isEmpty
+            ? _AllHidden(onOpen: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const HomeCategoriesScreen(),
+                  ),
+                ))
+            : LayoutBuilder(
               builder: (context, constraints) {
                 final columns = _columnsFor(viewStyle, constraints);
                 return RefreshIndicator(
@@ -134,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+      ),
     );
   }
 }

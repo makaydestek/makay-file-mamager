@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme/app_appearance.dart';
+
 /// Uygulama genelindeki ayarları tutar ve kalıcılaştırır.
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._prefs);
@@ -21,6 +23,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kDeviceModeChosen = 'device_mode_chosen';
   static const _kPermissionsOnboarded = 'permissions_onboarded';
   static const _kDynamicColor = 'dynamic_color';
+  static const _kAppearance = 'appearance';
   static const _kHiddenHomeCategories = 'hidden_home_categories';
 
   static Future<SettingsProvider> load() async =>
@@ -149,10 +152,25 @@ class SettingsProvider extends ChangeNotifier {
 
   /// Material You: Android 12+ sistem (dinamik) rengi kullanılsın mı?
   /// Eski sürüm/cihazda etkisizdir (dinamik palet yoksa turkuaza döner).
+  ///
+  /// Not: dinamik renk yalnız **Klasik** görünümde etkilidir; seçili başka
+  /// bir görünümün kendi tarz rengi ezilmez (bkz. [AppAppearance]).
   bool get dynamicColor => _prefs.getBool(_kDynamicColor) ?? true;
 
   set dynamicColor(bool value) {
     _prefs.setBool(_kDynamicColor, value);
+    notifyListeners();
+  }
+
+  /// Seçili **görünüm preset'i**: yazı fontu, ikon stili, köşe yuvarlaklığı,
+  /// renk doygunluğu ve ana ekran arka planını birlikte değiştirir.
+  ///
+  /// Tema (açık/koyu) ile bağımsızdır: koyu temada da görünüm korunur.
+  AppAppearance get appearance =>
+      AppAppearance.fromId(_prefs.getString(_kAppearance));
+
+  set appearance(AppAppearance value) {
+    _prefs.setString(_kAppearance, value.id);
     notifyListeners();
   }
 

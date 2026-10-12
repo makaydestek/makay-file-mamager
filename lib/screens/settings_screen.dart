@@ -9,6 +9,7 @@ import 'home_categories_screen.dart';
 import '../services/platform_service.dart';
 import '../services/update_service.dart';
 import '../utils/formats.dart';
+import '../widgets/appearance_picker.dart';
 import '../widgets/update_dialog.dart';
 
 /// Referans uygulamadaki Ayarlar ekranı.
@@ -32,6 +33,14 @@ class SettingsScreen extends StatelessWidget {
             }),
             leading: const Icon(Icons.palette_rounded),
             onTap: () => _pickTheme(context, settings),
+          ),
+          ListTile(
+            title: const Text('Görünüm'),
+            subtitle: Text(
+              '${settings.appearance.label} — ${settings.appearance.description}',
+            ),
+            leading: const Icon(Icons.style_rounded),
+            onTap: () => _pickAppearance(context, settings),
           ),
           ListTile(
             title: const Text('Arayüz modu'),
@@ -265,6 +274,16 @@ class SettingsScreen extends StatelessWidget {
     } else {
       await showUpdateDialog(context, info);
     }
+  }
+
+  /// Görünüm (görsel preset) seçimi: yazı, ikon, köşe ve arka plan birlikte.
+  static Future<void> _pickAppearance(
+      BuildContext context, SettingsProvider settings) async {
+    final appearance = await showAppearanceDialog(
+      context,
+      selected: settings.appearance,
+    );
+    if (appearance != null) settings.appearance = appearance;
   }
 
   static Future<void> _pickTheme(
