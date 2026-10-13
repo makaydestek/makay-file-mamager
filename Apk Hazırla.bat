@@ -77,6 +77,16 @@ if not exist "APK\MakayFileManager-%VER%.apk" (
   exit /b 1
 )
 
+rem R8 obfuscation haritasi - release APK'nin stack trace'leri buradan
+rem cozulebilir. APK ile ayni klasorde (surumli adla) ve GitHub Release
+rem asset'i olarak yayinlanir.
+set MAPSRC=build\app\outputs\mapping\release\mapping.txt
+if exist "%MAPSRC%" (
+  copy /y "%MAPSRC%" "APK\MakayFileManager-%VER%-mapping.txt" >nul
+) else (
+  echo [UYARI] R8 mapping.txt bulunamadi - stack trace cozulemez.
+)
+
 echo.
 echo [2/5] SHA256 ozeti hazirlaniyor...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -97,6 +107,9 @@ for %%F in ("APK\MakayFileManager-*.apk") do (
 )
 for %%F in ("APK\MakayFileManager-*.apk.sha256") do (
   if /i not "%%~nxF"=="MakayFileManager-%VER%.apk.sha256" del /q "%%F" >nul 2>&1
+)
+for %%F in ("APK\MakayFileManager-*-mapping.txt") do (
+  if /i not "%%~nxF"=="MakayFileManager-%VER%-mapping.txt" del /q "%%F" >nul 2>&1
 )
 
 echo.
@@ -124,7 +137,13 @@ echo.
 echo [5/5] GitHub Release olusturuluyor...
 gh release view "%VER%" >nul 2>&1
 if errorlevel 1 goto :createrelease
-gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber
+rem gh bos argumani reddettigi icin mapping yalnizca varsa asset listesine katilir.
+if exist "APK\MakayFileManager-%VER%-mapping.txt" (
+  gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" "APK\MakayFileManager-%VER%-mapping.txt" --clobber
+) else (
+  echo [UYARI] mapping yok, APK + SHA-256 yukleniyor.
+  gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber
+)
 if errorlevel 1 (
   echo [HATA] Release varliklari yuklenemedi.
   pause
@@ -142,9 +161,13 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256"
+if exist "APK\MakayFileManager-%VER%-mapping.txt" (
+  gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" "APK\MakayFileManager-%VER%-mapping.txt"
+) else (
+  gh release upload "%VER%" "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256"
+)
 if errorlevel 1 (
-  echo [HATA] Release varliklari - APK veya sha256 yuklenemedi.
+  echo [HATA] Release varliklari - APK, sha256 veya mapping yuklenemedi.
   pause
   exit /b 1
 )
@@ -153,10 +176,13 @@ rem Yuklemenin gerceklestigini dogrula (sessiz basarisizlik olmasin).
 gh release view "%VER%" --json assets -q ".assets | length" > "%TEMP%\mf_assets.txt"
 set /p ASSETS=<"%TEMP%\mf_assets.txt"
 if "%ASSETS%"=="" goto assetsok
-if %ASSETS% LSS 2 (
+rem Mapping varsa 3 varlik beklenir; yoksa APK + sha256 ile 2 de basarilidir.
+set EXPECTED=3
+if not exist "APK\MakayFileManager-%VER%-mapping.txt" set EXPECTED=2
+if %ASSETS% LSS %EXPECTED% (
   echo.
   echo [HATA] Release %VER% olusturuldu ama dosyalar yuklenmedi - asset sayisi: %ASSETS%
-  echo        Elle yuklemek icin:  gh release upload %VER% "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" --clobber
+  echo        Elle yuklemek icin:  gh release upload %VER% "APK\MakayFileManager-%VER%.apk" "APK\MakayFileManager-%VER%.apk.sha256" "APK\MakayFileManager-%VER%-mapping.txt" --clobber
   pause
   exit /b 1
 )
