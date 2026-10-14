@@ -70,7 +70,8 @@ void main() {
     expect(appBar.bottom, isNull);
     expect(find.byType(Scaffold), findsOneWidget);
     // "Ana ekrana dön" kısayolu taşma menüsüne taşındı.
+    // Arama + sıralama + liste/ızgara geçişi = 3 düğme (taşma menüsü hariç).
     expect(appBar.actions?.whereType<IconButton>().length ?? 0,
-        lessThanOrEqualTo(2));
+        lessThanOrEqualTo(3));
   });
 }

@@ -75,6 +75,12 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Makay Dosya Yöneticisi'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'Ara',
+            // Cihaz geneli arama: dosya + medya + uygulama.
+            onPressed: () => Navigator.of(context).pushNamed('/search'),
+          ),
           PopupMenuButton<String>(
             onSelected: (value) {
               switch (value) {

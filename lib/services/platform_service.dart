@@ -192,6 +192,38 @@ class PlatformService {
     return bytes;
   }
 
+  /// Videonun ilk karesi (JPEG baytları) — liste/ızgara önizlemesi için.
+  ///
+  /// Sonuçlar [_videoThumbCache] içinde tutulur: aynı video liste
+  /// kaydırılırken yeniden çözülmez. Okunamazsa null döner ve arayüz
+  /// standart video ikonuna düşer.
+  static final Map<String, Uint8List?> _videoThumbCache = {};
+
+  static const int _videoThumbCacheMax = 240;
+
+  static Uint8List? cachedVideoThumbnail(String path) =>
+      _videoThumbCache[path];
+
+  static Future<Uint8List?> videoThumbnail(String path) async {
+    if (!supported || path.isEmpty) return null;
+    if (_videoThumbCache.containsKey(path)) return _videoThumbCache[path];
+    Uint8List? bytes;
+    try {
+      bytes = await _channel
+          .invokeMethod<Uint8List>('getVideoThumbnail', {'path': path});
+    } on PlatformException {
+      bytes = null;
+    } on MissingPluginException {
+      bytes = null;
+    }
+    // Sınırlı önbellek: eski (artık görünmeyen) kayıtlar atılır.
+    if (_videoThumbCache.length >= _videoThumbCacheMax) {
+      _videoThumbCache.remove(_videoThumbCache.keys.first);
+    }
+    _videoThumbCache[path] = bytes;
+    return bytes;
+  }
+
   /// Cihaz Android TV mi? (Leanback desteği var mı)
   static Future<bool> isTv() async {
     if (!supported) return false;
@@ -211,7 +243,8 @@ class PlatformService {
   static Future<bool> hasUsageAccess() async {
     if (!supported) return false;
     try {
-      return await _channel.invokeMethod<bool>('hasUsageStats') ?? false;
+      // Kanal adı Kotlin tarafındaki "hasUsageAccess" ile eşleşmelidir.
+      return await _channel.invokeMethod<bool>('hasUsageAccess') ?? false;
     } on PlatformException {
       return false;
     } on MissingPluginException {

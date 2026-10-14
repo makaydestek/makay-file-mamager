@@ -14,7 +14,7 @@ import '../services/recycle_bin_service.dart';
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
 import '../services/recent_seen_store.dart';
-import 'browser_screen.dart' show kAudioExts, kImageExts, kVideoExts;
+import '../utils/file_opener.dart' show kAudioExts, kImageExts, kVideoExts;
 import 'image_viewer_screen.dart';
 import 'media_viewer_screen.dart';
 

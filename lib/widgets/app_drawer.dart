@@ -50,6 +50,13 @@ class _AppDrawerState extends State<AppDrawer> {
                     onTap: () =>
                         Navigator.of(context).pushReplacementNamed('/'),
                   ),
+                  _DrawerItem(
+                    icon: Icons.search_rounded,
+                    title: 'Ara',
+                    // Cihaz geneli arama (dosya + medya + uygulama).
+                    onTap: () =>
+                        Navigator.of(context).pushNamed('/search'),
+                  ),
                   // Ana bellek: kullanılan/toplam değerini arka planda gelir.
                   ValueListenableBuilder<Map<String, String>>(
                     valueListenable: CategorySizeService.labels,

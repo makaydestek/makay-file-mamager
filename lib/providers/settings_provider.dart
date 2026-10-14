@@ -20,6 +20,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kStorageWarnPercent = 'storage_warn_percent';
   static const _kTvMode = 'tv_mode';
   static const _kViewStyle = 'view_style';
+  static const _kBrowserViewMode = 'browser_view_mode';
   static const _kDeviceModeChosen = 'device_mode_chosen';
   static const _kPermissionsOnboarded = 'permissions_onboarded';
   static const _kDynamicColor = 'dynamic_color';
@@ -118,6 +119,16 @@ class SettingsProvider extends ChangeNotifier {
 
   set viewStyle(String value) {
     _prefs.setString(_kViewStyle, value);
+    notifyListeners();
+  }
+
+  /// Dosya tarayıcısı görünümü: 'list' (satır) veya 'grid' (ızgara).
+  ///
+  /// Kullanıcının seçimi kalıcıdır ve tüm tarayıcı ekranlarında ortaktır.
+  String get browserViewMode => _prefs.getString(_kBrowserViewMode) ?? 'list';
+
+  set browserViewMode(String value) {
+    _prefs.setString(_kBrowserViewMode, value);
     notifyListeners();
   }
 

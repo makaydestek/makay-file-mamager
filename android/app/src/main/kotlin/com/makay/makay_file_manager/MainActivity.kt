@@ -177,6 +177,16 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getVideoThumbnail" -> {
+                        // Video liste/ızgara önizlemesi: ilk kare JPEG.
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrEmpty()) {
+                            result.success(null)
+                        } else {
+                            runBackground(result) { videoThumbnailJpeg(path) }
+                        }
+                    }
+
                     "isTv" -> {
                         // Android TV: leanback veya dokunmatik ekran yok.
                         val pm = packageManager
@@ -324,6 +334,41 @@ class MainActivity : FlutterActivity() {
             null
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /// Videonun ilk karesini ~256px JPEG olarak döndürür (önizleme).
+    ///
+    /// `MediaMetadataRetriever` dosyanın ilk senkron karesini verir; büyük
+    /// videolarda bile tek kare okunduğu için hızlıdır. Okunamazsa null
+    /// döner ve arayüz ikon geri düşmesi yapar.
+    private fun videoThumbnailJpeg(path: String): ByteArray? {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(path)
+            val frame = retriever.getFrameAtTime(
+                0,
+                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+            ) ?: return null
+            val maxDim = 256
+            val scale = minOf(
+                maxDim.toFloat() / frame.width.coerceAtLeast(1),
+                maxDim.toFloat() / frame.height.coerceAtLeast(1),
+                1f
+            )
+            val w = (frame.width * scale).toInt().coerceAtLeast(1)
+            val h = (frame.height * scale).toInt().coerceAtLeast(1)
+            val small = android.graphics.Bitmap.createScaledBitmap(frame, w, h, true)
+            val out = java.io.ByteArrayOutputStream()
+            small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 78, out)
+            out.toByteArray()
+        } catch (e: Exception) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
         }
     }
 

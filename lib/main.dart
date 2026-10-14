@@ -18,6 +18,7 @@ import 'screens/recycle_bin_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/apps_screen.dart';
 import 'screens/cloud_screen.dart';
+import 'screens/global_search_screen.dart';
 import 'screens/network_access_screen.dart';
 import 'screens/remote_screen.dart';
 import 'screens/storage_analysis_screen.dart';
@@ -286,6 +287,9 @@ Route<dynamic> _onGenerateRoute(RouteSettings settings) {
       screen = const _HomeLauncher();
     case '/settings':
       screen = const SettingsScreen();
+    case '/search':
+      // Cihaz geneli arama (dosya + medya + uygulama).
+      screen = const GlobalSearchScreen();
     case '/analysis':
       screen = const StorageAnalysisScreen();
     case '/apps':

@@ -14,36 +14,19 @@ import '../services/root_service.dart';
 import '../services/transfer.dart';
 import '../services/vault_service.dart';
 import '../utils/debug_log.dart';
+import '../utils/file_opener.dart';
 import '../utils/formats.dart';
 import '../widgets/apk_install_dialog.dart';
+import '../widgets/file_thumbnail.dart';
 import '../widgets/folder_tree_panel.dart';
 import '../widgets/transfer_progress_dialog.dart';
 import 'archive_screen.dart';
 import 'hex_viewer_screen.dart';
-import 'image_viewer_screen.dart';
-import 'media_viewer_screen.dart';
 import 'sqlite_viewer_screen.dart';
 import 'text_editor_screen.dart';
 
-/// Önizleme destekli dosya uzantıları.
-const kImageExts = {
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif', 'tif',
-  'tiff'
-};
-const kVideoExts = {
-  'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', 'm4v', 'ts', 'wmv'
-};
-const kAudioExts = {'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav', 'wma'};
-
-/// Metin editörüyle açılan düz metin uzantıları.
-const kTextExts = {
-  'txt', 'md', 'log', 'csv', 'json', 'xml', 'yaml', 'yml', 'ini', 'conf',
-  'cfg', 'toml', 'html', 'css', 'js', 'dart', 'kt', 'java', 'py', 'sh', 'bat',
-  'gradle', 'properties', 'env', 'srt', 'vtt'
-};
-
-/// SQLite veritabanı uzantıları (salt okunur görüntüleyici).
-const kSqliteExts = {'db', 'sqlite', 'sqlite3'};
+/// Önizleme uzantıları ve dosya açma mantığı [FileOpener]'da ortaktır
+/// (tarayıcı + cihaz geneli arama); buraya tekrar tanımlanmaz.
 
 /// Dosya tarayıcı ekranı: liste, sıralama, arama, dosya işlemleri.
 ///
@@ -168,57 +151,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
-  /// Dosya türüne göre yerleşik önizleme açılır; desteklenmeyen türde
-  /// bilgi diyaloğu gösterilir.
+  /// Dosya türüne göre yerleşik önizleme [FileOpener] ile açılır;
+  /// desteklenmeyen türde bilgi diyaloğu gösterilir.
   void _openPreview(FileEntry e) {
-    final ext = e.name.contains('.')
-        ? e.name.split('.').last.toLowerCase()
-        : '';
-    if (ArchiveService.isArchive(e.name)) {
-      // ZIP/TAR/GZ arşivleri arşiv görüntüleyicide açılır.
-      _openArchive(e);
-      return;
-    }
-    if (kImageExts.contains(ext)) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ImageViewerScreen(file: File(e.path), title: e.name),
-        ),
-      );
-    } else if (kVideoExts.contains(ext)) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MediaViewerScreen(
-              file: File(e.path), isVideo: true),
-        ),
-      );
-    } else if (kAudioExts.contains(ext)) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MediaViewerScreen(
-              file: File(e.path), isVideo: false),
-        ),
-      );
-    } else if (kTextExts.contains(ext)) {
-      // Metin editörü: görüntüle + düzenleyip kaydet.
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => TextEditorScreen(file: File(e.path), title: e.name),
-        ),
-      );
-    } else if (kSqliteExts.contains(ext)) {
-      // SQLite görüntüleyici: tablolar + satırlar (salt okunur).
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => SqliteViewerScreen(file: File(e.path), title: e.name),
-        ),
-      );
-    } else if (ext == 'apk') {
-      // APK: bilgi diyaloğu yerine Android kurucusu (Kur/Güncelle) açılır.
-      showApkInstallDialog(context, File(e.path));
-    } else {
-      _showInfo(e);
-    }
+    FileOpener.openFile(context, e, onUnsupported: () => _showInfo(e));
   }
 
   /// Arşiv dosyasını arşiv görüntüleyici ekranında açar.
@@ -947,6 +883,26 @@ class _BrowserScreenState extends State<BrowserScreen> {
               onPressed: _pickSort,
               tooltip: 'Sırala',
             ),
+            IconButton(
+              // Liste ↔ Izgara: seçim kalıcıdır (SettingsProvider).
+              icon: Icon(
+                context.select<SettingsProvider, String>(
+                          (s) => s.browserViewMode) ==
+                      'grid'
+                  ? Icons.view_list_rounded
+                  : Icons.grid_view_rounded,
+              ),
+              tooltip: context.select<SettingsProvider, String>(
+                        (s) => s.browserViewMode) ==
+                    'grid'
+                  ? 'Liste görünümü'
+                  : 'Izgara görünümü',
+              onPressed: () {
+                final settings = context.read<SettingsProvider>();
+                settings.browserViewMode =
+                    settings.browserViewMode == 'grid' ? 'list' : 'grid';
+              },
+            ),
             if (!ClipboardManager.instance.isEmpty && !_searchActive)
               IconButton(
                 icon: const Icon(Icons.paste_rounded),
@@ -1113,64 +1069,165 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        itemCount: visible.length,
-        itemBuilder: (context, index) {
-          final e = visible[index];
-          final selected = _selected.contains(e.path);
-          final tile = ListTile(
-            selected: selected,
-            selectedTileColor:
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-            leading: Icon(e.icon, color: e.color, size: 32),
-            title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            // Referans uygulamadaki gibi "(Tarih • Boyut)" biçiminde.
-            subtitle: Text(
-              '(${Formats.date(e.modified, pattern: datePattern)}'
-              '${e.isDirectory ? ' • Klasör' : ' • ${Formats.size(e.size)}'})',
-              maxLines: 1,
-            ),
-            trailing: _selecting
-                ? Icon(
-                    selected
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey,
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.more_vert_rounded, size: 20),
-                    tooltip: 'Daha fazla',
-                    onPressed: () => _rowMenu(e),
-                  ),
-            onTap: () => _open(e),
-            onLongPress: () => _toggleSelect(e),
-          );
-          // Çift panel (tablet): uzun basıp sürükleyerek sol paneldeki
-          // klasör ağacına kopyalanır; seçiliyken sürüklenemez.
-          if (_selecting) return tile;
-          return LongPressDraggable<String>(
-            data: e.path,
-            feedback: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(8),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 240),
-                child: ListTile(
-                  dense: true,
-                  leading: Icon(e.icon, color: e.color, size: 24),
-                  title: Text(e.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+      child: context.select<SettingsProvider, String>(
+                (s) => s.browserViewMode) ==
+            'grid'
+          ? _buildGrid(context, visible, datePattern)
+          : _buildList(context, visible, datePattern),
+    );
+  }
+
+  /// Satır görünümü: ikon + ad + (tarih • boyut); uzun bas → seçim,
+  /// sürükle → (tablet) klasör ağacına kopyalama.
+  Widget _buildList(
+    BuildContext context,
+    List<FileEntry> visible,
+    String datePattern,
+  ) {
+    return ListView.builder(
+      itemCount: visible.length,
+      itemBuilder: (context, index) {
+        final e = visible[index];
+        final selected = _selected.contains(e.path);
+        final tile = ListTile(
+          selected: selected,
+          selectedTileColor:
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+          // Resim/videoda gerçek küçük resim, diğerlerinde renkli ikon.
+          leading: SizedBox(
+            width: 40,
+            height: 40,
+            child: FileThumbnail(entry: e, size: 40),
+          ),
+          title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          // Referans uygulamadaki gibi "(Tarih • Boyut)" biçiminde.
+          subtitle: Text(
+            '(${Formats.date(e.modified, pattern: datePattern)}'
+            '${e.isDirectory ? ' • Klasör' : ' • ${Formats.size(e.size)}'})',
+            maxLines: 1,
+          ),
+          trailing: _selecting
+              ? Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.circle_outlined,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey,
+                )
+              : IconButton(
+                  icon: const Icon(Icons.more_vert_rounded, size: 20),
+                  tooltip: 'Daha fazla',
+                  onPressed: () => _rowMenu(e),
                 ),
+          onTap: () => _open(e),
+          onLongPress: () => _toggleSelect(e),
+        );
+        // Çift panel (tablet): uzun basıp sürükleyerek sol paneldeki
+        // klasör ağacına kopyalanır; seçiliyken sürüklenemez.
+        if (_selecting) return tile;
+        return LongPressDraggable<String>(
+          data: e.path,
+          feedback: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: ListTile(
+                dense: true,
+                leading: Icon(e.icon, color: e.color, size: 24),
+                title: Text(e.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
             ),
-            childWhenDragging:
-                Opacity(opacity: 0.4, child: tile),
-            child: tile,
-          );
-        },
+          ),
+          childWhenDragging:
+              Opacity(opacity: 0.4, child: tile),
+          child: tile,
+        );
+      },
+    );
+  }
+
+  /// Izgara görünümü: kare önizleme + ad + boyut; fotoğraf/kamera
+  /// klasörlerinde dosyalar kendi görselleriyle görünür.
+  Widget _buildGrid(
+    BuildContext context,
+    List<FileEntry> visible,
+    String datePattern,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final columns = width > 900 ? 5 : (width > 600 ? 4 : 3);
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.78,
       ),
+      itemCount: visible.length,
+      itemBuilder: (context, index) {
+        final e = visible[index];
+        final selected = _selected.contains(e.path);
+        return InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _open(e),
+          onLongPress: () => _toggleSelect(e),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: selected
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary, width: 2)
+                  : null,
+              color: selected
+                  ? Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.08)
+                  : null,
+            ),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Kare önizleme: genişliğe yayılır, en-boy korunur.
+                Expanded(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: FileThumbnail(
+                        entry: e,
+                        size: 120,
+                        borderRadius: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  e.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  e.isDirectory
+                      ? 'Klasör'
+                      : Formats.size(e.size),
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
