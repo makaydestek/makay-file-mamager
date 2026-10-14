@@ -21,6 +21,10 @@
         tools:ignore="QueryAllPackagesPermission"/>
     <!-- Uygulama içinden APK kurulumu için (otomatik güncelleme) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Uygulama boyutları (StorageStats): verilmezse yalnız kendi paketin
+         boyutu okunabilir; kullanıcı Ayarlar → Kullanım erişimi'nden verir -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"/>
     <!-- TV ve dokunmatik olmayan cihazlarda çalışabilir -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>

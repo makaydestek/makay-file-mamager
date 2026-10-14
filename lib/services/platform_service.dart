@@ -40,6 +40,51 @@ class InstalledApp {
       );
 }
 
+/// Bir APK dosyasının paket bilgileri (İndirilenler → Kur/Güncelle).
+class ApkInfo {
+  const ApkInfo({
+    required this.name,
+    required this.packageName,
+    required this.versionName,
+    required this.versionCode,
+    required this.installed,
+    required this.installedVersionName,
+    required this.installedVersionCode,
+    required this.size,
+  });
+
+  /// Uygulama adı (paket arşivinden okunamazsa paket adı).
+  final String name;
+  final String packageName;
+  final String versionName;
+
+  /// APK'nın sürüm numarası (kurulum diyaloğu başlığı için).
+  final int versionCode;
+
+  /// Aynı paket cihazda kurulu mu (→ "Güncelle" mi "Kur" mu?).
+  final bool installed;
+  final String installedVersionName;
+  final int installedVersionCode;
+
+  /// APK dosyasının boyutu (bayt).
+  final int size;
+
+  /// Aynı sürüm zaten kurulu mu? (Güncelleme yerine "zaten güncel" uyarısı)
+  bool get sameVersion =>
+      installed && installedVersionCode >= 0 && installedVersionCode == versionCode;
+
+  factory ApkInfo.fromMap(Map<Object?, Object?> map) => ApkInfo(
+        name: (map['name'] as String?) ?? '',
+        packageName: (map['packageName'] as String?) ?? '',
+        versionName: (map['versionName'] as String?) ?? '',
+        versionCode: (map['versionCode'] as num?)?.toInt() ?? -1,
+        installed: (map['installed'] as bool?) ?? false,
+        installedVersionName: (map['installedVersionName'] as String?) ?? '',
+        installedVersionCode: (map['installedVersionCode'] as num?)?.toInt() ?? -1,
+        size: (map['size'] as num?)?.toInt() ?? -1,
+      );
+}
+
 /// Bağlı depolama birimi (USB OTG / SD kart).
 class StorageVolumeInfo {
   StorageVolumeInfo({
@@ -156,6 +201,51 @@ class PlatformService {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  /// "Kullanım erişimi" (PACKAGE_USAGE_STATS) izni verildi mi?
+  ///
+  /// İzin yoksa yalnız kendi paketimizin boyutu okunabilir; Uygulamalar
+  /// ekranı kullanıcıyı Ayarlar → Kullanım erişimi'ne yönlendirir.
+  static Future<bool> hasUsageAccess() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hasUsageStats') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// Ayarlar → Kullanım erişimi ekranını açar.
+  static Future<bool> openUsageAccessSettings() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('openUsageAccessSettings') ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// APK dosyasının paket bilgileri (kurulum diyaloğu için).
+  ///
+  /// Dosya bir APK değilse ya da okunamazsa null döner.
+  static Future<ApkInfo?> apkInfo(String path) async {
+    if (!supported || path.isEmpty) return null;
+    try {
+      final map = await _channel
+          .invokeMapMethod<Object?, Object?>('getApkInfo', {'path': path});
+      if (map == null) return null;
+      return ApkInfo.fromMap(map);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
     }
   }
 

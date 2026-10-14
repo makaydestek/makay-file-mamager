@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
+import '../widgets/apk_install_dialog.dart';
 import '../widgets/app_icon.dart';
 
 /// Uygulamalar ekranı: Tümü / İndirilenler (APK'lar) / Dahili (sistem).
@@ -21,13 +22,19 @@ class AppsScreen extends StatefulWidget {
   State<AppsScreen> createState() => _AppsScreenState();
 }
 
-class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateMixin {
+class _AppsScreenState extends State<AppsScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabController;
 
   List<InstalledApp> _apps = [];
   List<File> _apkFiles = [];
   bool _loading = true;
   bool _sortDesc = true;
+  bool _showSystemApps = true;
+
+  /// StorageStats izni yoksa boyutlar yalnız base.apk kadar görünür;
+  /// kullanıcı Ayarlar → Kullanım erişimi ile tam boyutları alır.
+  bool _usageAccess = true;
 
   @override
   void initState() {
@@ -35,11 +42,19 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
     final initial =
         widget.initialIndex < 0 ? 0 : (widget.initialIndex > 2 ? 2 : widget.initialIndex);
     _tabController = TabController(length: 3, vsync: this, initialIndex: initial);
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  /// Ayarlar → Kullanım erişimi'nden dönülünce boyutlar tazelensin.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_loading) _load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
   }
@@ -49,12 +64,14 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
     // sabit liste `sort` ile değiştirilemediği için MUTLAKA kopyalanır.
     final apps = List<InstalledApp>.of(await PlatformService.installedApps());
     final apks = _downloadedApks();
+    final usage = await PlatformService.hasUsageAccess();
     apps.sort((a, b) =>
         _sortDesc ? b.size.compareTo(a.size) : a.size.compareTo(b.size));
     if (!mounted) return;
     setState(() {
       _apps = apps;
       _apkFiles = apks;
+      _usageAccess = usage;
       _loading = false;
     });
   }
@@ -90,6 +107,16 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
             ),
           ),
           IconButton(
+            icon: Icon(_showSystemApps
+                ? Icons.visibility_rounded
+                : Icons.visibility_off_rounded),
+            onPressed: () =>
+                setState(() => _showSystemApps = !_showSystemApps),
+            tooltip: _showSystemApps
+                ? 'Sistem uygulamalarını gizle'
+                : 'Sistem uygulamalarını göster',
+          ),
+          IconButton(
             icon: const Icon(Icons.sort_rounded),
             onPressed: () {
               setState(() {
@@ -114,17 +141,41 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _appsList(_apps, 'Yüklü uygulama bulunamadı'),
-                _downloadsTab(),
-                _appsList(
-                  _apps.where((a) => a.isSystem).toList(growable: false),
-                  'Cihazla gelen uygulama bulunamadı',
+                if (!_usageAccess) _usageAccessBanner(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _appsList(_apps, 'Yüklü uygulama bulunamadı'),
+                      _downloadsTab(),
+                      _appsList(
+                        _apps.where((a) => a.isSystem).toList(growable: false),
+                        'Cihazla gelen uygulama bulunamadı',
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
+    );
+  }
+
+  /// Boyutlar yalnız base.apk kadar görünüyor: tam boyut (uygulama +
+  /// veri) için Ayarlar → Kullanım erişimi izni gerekir.
+  Widget _usageAccessBanner() {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: ListTile(
+        leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
+        title: const Text('Uygulama boyutları eksik görünüyor'),
+        subtitle: const Text(
+            'Tam boyut için Kullanım erişimi iznini açın.'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => PlatformService.openUsageAccessSettings(),
+      ),
     );
   }
 
@@ -146,6 +197,8 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
               const Icon(Icons.android_rounded, color: Color(0xFF43A047)),
           title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(Formats.size(size)),
+          // APK'ya dokununca bilgi yerine Kur/Güncelle ekranı açılır.
+          onTap: () => showApkInstallDialog(context, file),
         );
       },
     );
@@ -153,15 +206,20 @@ class _AppsScreenState extends State<AppsScreen> with SingleTickerProviderStateM
 
   /// Yüklenmiş uygulama listesi (TÜMÜ ve DAHİLİ sekmeleri paylaşır).
   Widget _appsList(List<InstalledApp> apps, String emptyMessage) {
-    if (apps.isEmpty) {
+    // _showSystemApps false olduğunda system uygulamalarını gizle.
+    final visibleApps = _showSystemApps
+        ? apps
+        : apps.where((a) => !a.isSystem).toList(growable: false);
+
+    if (visibleApps.isEmpty) {
       return Center(
         child: Text(emptyMessage),
       );
     }
     return ListView.builder(
-      itemCount: apps.length,
+      itemCount: visibleApps.length,
       itemBuilder: (context, index) {
-        final app = apps[index];
+        final app = visibleApps[index];
         return ListTile(
           leading: AppIcon(app),
           title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),

@@ -15,6 +15,7 @@ import '../services/transfer.dart';
 import '../services/vault_service.dart';
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
+import '../widgets/apk_install_dialog.dart';
 import '../widgets/folder_tree_panel.dart';
 import '../widgets/transfer_progress_dialog.dart';
 import 'archive_screen.dart';
@@ -212,6 +213,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
           builder: (_) => SqliteViewerScreen(file: File(e.path), title: e.name),
         ),
       );
+    } else if (ext == 'apk') {
+      // APK: bilgi diyaloğu yerine Android kurucusu (Kur/Güncelle) açılır.
+      showApkInstallDialog(context, File(e.path));
     } else {
       _showInfo(e);
     }
@@ -313,6 +317,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 _deleteEntries([e]);
               },
             ),
+            if (!e.isDirectory && ext == 'apk')
+              ListTile(
+                leading: const Icon(Icons.android_rounded),
+                title: const Text('Kur / Güncelle'),
+                subtitle: const Text('Android kurucusunu açar'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showApkInstallDialog(context, File(e.path));
+                },
+              ),
             if (!e.isDirectory && ArchiveService.isArchive(e.name))
               ListTile(
                 leading: const Icon(Icons.folder_zip_outlined),

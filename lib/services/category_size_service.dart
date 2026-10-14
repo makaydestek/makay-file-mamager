@@ -281,13 +281,15 @@ class CategorySizeService {
         }
       }
 
-      // Uygulamalar: yüklü paket boyutları toplamı.
+      // Uygulamalar: yüklü paket boyutları toplamı + adet (F Dosya
+      // Yöneticisi'ndeki gibi "13,9 GB (53)"). Boyut StorageStats ile
+      // okunur; izin yoksa platform katmanı base.apk boyutuna düşer.
       try {
         final apps = await PlatformService.installedApps();
         final appsBytes =
             apps.fold<int>(0, (sum, a) => sum + (a.size > 0 ? a.size : 0));
-        if (appsBytes > 0) {
-          out['apps'] = Formats.size(appsBytes);
+        if (appsBytes > 0 && apps.isNotEmpty) {
+          out['apps'] = '${Formats.size(appsBytes)} (${apps.length})';
         } else {
           keep.add('apps'); // bilgi gelmedi: önceki değer korunur
         }

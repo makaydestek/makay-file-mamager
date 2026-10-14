@@ -112,6 +112,40 @@ class MainActivity : FlutterActivity() {
                         runBackground(result) { installedApps() }
                     }
 
+                    "hasUsageAccess" -> {
+                        // StorageStats yalnız bu izinle tüm paketler için okunur.
+                        try {
+                            result.success(hasUsageAccess())
+                        } catch (e: Exception) {
+                            result.error("usage_error", e.message, null)
+                        }
+                    }
+
+                    "openUsageAccessSettings" -> {
+                        // "Kullanım erişimi" yalnız sistem ayar ekranından verilir.
+                        try {
+                            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_SETTINGS))
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.error("settings_error", e2.message, null)
+                            }
+                        }
+                    }
+
+                    "getApkInfo" -> {
+                        // İndirilenler'de APK'ya dokununca kurulum öncesi bilgi.
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrEmpty()) {
+                            result.error("not_found", "APK yolu boş", null)
+                        } else {
+                            runBackground(result) { apkInfo(path) }
+                        }
+                    }
+
                     "getAppIcon" -> {
                         // Tek uygulamanın ikonu (liste ekranı tembel yükler).
                         val pkg = call.argument<String>("packageName")
@@ -251,7 +285,7 @@ class MainActivity : FlutterActivity() {
                 "packageName" to pi.packageName,
                 "versionName" to (pi.versionName ?: ""),
                 "isSystem" to ((ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0),
-                "size" to packageSize(pi.packageName, ai.uid),
+                "size" to packageSize(pi.packageName, ai.uid, ai.sourceDir ?: ""),
                 // APK yedekleme: kurulum APK'sının gerçek yolu.
                 "sourceDir" to (ai.sourceDir ?: "")
             )
@@ -295,24 +329,93 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
-    /// Paket boyutu (API 26+); PACKAGE_USAGE_STATS izni yoksa -1 döner.
-    private fun packageSize(packageName: String, uid: Int): Long {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    /// Paket boyutu (API 26+).
+    ///
+    /// [hasUsageAccess] yoksa yalnızca KENDİ paketimizin boyutu okunabilir;
+    /// diğer paketler SecurityException fırlatır. Bu durumda -1 yerine
+    /// kurulum APK'sı (base.apk) boyutu döner: ana ekran kartı "0" ya da
+    /// yalnız kendi uygulamanın boyutunu göstermez. Tam boyut (app + data)
+    /// için kullanıcının Ayarlar → Kullanım erişimi'nden izin vermesi gerekir.
+    private fun packageSize(packageName: String, uid: Int, sourceDir: String): Long {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
                 val statsManager =
                     getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
                 // Varsayılan depolama birimi: 00000000-0000-0000-0000-000000000000
                 val defaultUuid = java.util.UUID(0L, 0L)
                 val stats = statsManager
                     .queryStatsForPackage(defaultUuid, packageName, Process.myUserHandle())
-                stats.appBytes + stats.dataBytes
-            } else {
-                -1L
+                return stats.appBytes + stats.dataBytes
+            } catch (e: Exception) {
+                // İzin yok: aşağıda APK boyutuna düşülür.
             }
+        }
+        return try {
+            if (sourceDir.isEmpty()) -1L else java.io.File(sourceDir).length().coerceAtLeast(-1L)
         } catch (e: Exception) {
             -1L
         }
     }
+
+    /// "Kullanım erişimi" (PACKAGE_USAGE_STATS) izni verildi mi?
+    private fun hasUsageAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+        return try {
+            val appOps = getSystemService(Context.APP_OPS_SERVICE)
+                as android.app.AppOpsManager
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(), packageName
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(), packageName
+                )
+            }
+            mode == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /// APK dosyasının paket bilgileri (kurulum diyaloğu için).
+    ///
+    /// [PackageManager.getPackageArchiveInfo] yalnız dosyadan okur; kurulu
+    /// sürümle karşılaştırılarak "Kur" mu "Güncelle" mi gösterilir anlaşılır.
+    private fun apkInfo(path: String): Map<String, Any?>? {
+        val file = java.io.File(path)
+        if (!file.exists()) return null
+        val pm = packageManager
+        val archive = pm.getPackageArchiveInfo(path, 0) ?: return null
+        val ai = archive.applicationInfo
+        // Etiket/ikon arşivden okunabilmesi için kaynak yolları dosyaya çevrilir.
+        ai?.sourceDir = path
+        ai?.publicSourceDir = path
+        val label = ai?.let { pm.getApplicationLabel(it).toString() } ?: archive.packageName
+        val installed = try {
+            pm.getPackageInfo(archive.packageName, 0)
+        } catch (e: Exception) {
+            null
+        }
+        return mapOf(
+            "name" to label,
+            "packageName" to archive.packageName,
+            "versionName" to (archive.versionName ?: ""),
+            "versionCode" to versionCodeOf(archive),
+            "installed" to (installed != null),
+            "installedVersionName" to (installed?.versionName ?: ""),
+            "installedVersionCode" to (installed?.let { versionCodeOf(it) } ?: -1L),
+            "size" to file.length()
+        )
+    }
+
+    /// PackageInfo sürüm numarası (API 28'de longVersionCode'a geçildi).
+    private fun versionCodeOf(info: android.content.pm.PackageInfo): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
+        else @Suppress("DEPRECATION") info.versionCode.toLong()
 
     private fun iconPng(drawable: Drawable): ByteArray {
         val bitmap = drawableToBitmap(drawable)
