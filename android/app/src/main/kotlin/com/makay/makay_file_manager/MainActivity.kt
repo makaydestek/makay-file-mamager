@@ -136,6 +136,29 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "openAppSettings" -> {
+                        // Android 13+ "kısıtlı ayarlar": sideload edilmiş
+                        // uygulamalara özel erişim (kullanım erişimi) ANCAK
+                        // Uygulama bilgisindeki ⋮ menüsünden verilir. Kullanıcıyı
+                        // doğrudan o sayfaya götürürüz.
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_SETTINGS))
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.error("settings_error", e2.message, null)
+                            }
+                        }
+                    }
+
                     "getApkInfo" -> {
                         // İndirilenler'de APK'ya dokununca kurulum öncesi bilgi.
                         val path = call.argument<String>("path")

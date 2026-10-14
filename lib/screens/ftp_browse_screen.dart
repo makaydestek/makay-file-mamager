@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:ftpconnect/ftpconnect.dart';
 
+import '../services/remote_download.dart';
 import '../services/remote_service.dart';
 import '../utils/formats.dart';
 
@@ -78,42 +77,11 @@ class _FtpBrowseScreenState extends State<FtpBrowseScreen> {
     final remote = _path.endsWith('/')
         ? '$_path${entry.name}'
         : '$_path/${entry.name}';
-    final dir = Directory('${Directory.systemTemp.path}/makay_downloads');
-    dir.createSync(recursive: true);
-    final target = File('${dir.path}${Platform.pathSeparator}${entry.name}');
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    try {
-      await _client.download(widget.location, remote, target);
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('İndirildi: ${target.path}'),
-            action: SnackBarAction(
-              label: 'Klasörü aç',
-              onPressed: () => _reveal(target),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('İndirme başarısız: $e')),
-        );
-      }
-    }
-  }
-
-  void _reveal(File target) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Dosya: ${target.path}')),
+    // Download klasörüne iner; APK ise bitince Kur/Güncelle diyaloğu açılır.
+    await RemoteDownload.run(
+      context,
+      fileName: entry.name,
+      transfer: (target) => _client.download(widget.location, remote, target),
     );
   }
 

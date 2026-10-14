@@ -232,6 +232,22 @@ class PlatformService {
     }
   }
 
+  /// Uygulamanın kendi Ayarlar bilgi sayfasını açar.
+  ///
+  /// Android 13+ "kısıtlı ayarlar": sideload edilmiş uygulamalara özel
+  /// erişimler (kullanım erişimi vb.) yalnız bu sayfadaki ⋮ menüsünden
+  /// "Kısıtlı ayarlara izin ver" ile açılabilir.
+  static Future<bool> openAppSettings() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('openAppSettings') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// APK dosyasının paket bilgileri (kurulum diyaloğu için).
   ///
   /// Dosya bir APK değilse ya da okunamazsa null döner.

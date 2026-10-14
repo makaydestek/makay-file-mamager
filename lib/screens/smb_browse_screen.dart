@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
+import '../services/remote_download.dart';
 import '../services/remote_service.dart';
 import '../services/smb_client.dart';
 import '../utils/formats.dart';
@@ -76,32 +75,13 @@ class _SmbBrowseScreenState extends State<SmbBrowseScreen> {
 
   Future<void> _download(SmbEntry entry) async {
     final remote = _path.isEmpty ? entry.name : '$_path\\${entry.name}';
-    final dir = Directory('${Directory.systemTemp.path}/makay_downloads');
-    await dir.create(recursive: true);
-    final target = File('${dir.path}${Platform.pathSeparator}${entry.name}');
-
     if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+    // Download klasörüne iner; APK ise bitince Kur/Güncelle diyaloğu açılır.
+    await RemoteDownload.run(
+      context,
+      fileName: entry.name,
+      transfer: (target) => _client!.download(remote, target),
     );
-    try {
-      await _client!.download(remote, target);
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('İndirildi: ${target.path}')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('İndirme başarısız: $e')),
-        );
-      }
-    }
   }
 
   String get _displayPath => '\\\\${widget.location.host}\\'

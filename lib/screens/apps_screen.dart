@@ -164,6 +164,11 @@ class _AppsScreenState extends State<AppsScreen>
 
   /// Boyutlar yalnız base.apk kadar görünüyor: tam boyut (uygulama +
   /// veri) için Ayarlar → Kullanım erişimi izni gerekir.
+  ///
+  /// Bazı cihazlarda (MIUI vb.) ayar doğrudan açılmaz ya da "erişim
+  /// reddedildi" diyaloğu çıkar; bu yüzden tek tuş yerine adım adım rehber
+  /// gösterilir: hem Kullanım erişimi listesi hem de (Android 13+
+  /// kısıtlı ayarlar için) Uygulama bilgisi sayfası açılır.
   Widget _usageAccessBanner() {
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -172,9 +177,59 @@ class _AppsScreenState extends State<AppsScreen>
         leading: Icon(Icons.info_outline_rounded, color: scheme.primary),
         title: const Text('Uygulama boyutları eksik görünüyor'),
         subtitle: const Text(
-            'Tam boyut için Kullanım erişimi iznini açın.'),
+            'Tam boyut için izin vermek adına dokunun.'),
         trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => PlatformService.openUsageAccessSettings(),
+        onTap: _showUsageGuide,
+      ),
+    );
+  }
+
+  /// Kullanım erişimi izni için adım adım rehber.
+  void _showUsageGuide() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Kullanım erişimi izni'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Boyutların tam (uygulama + veri) gösterilebilmesi için '
+                'aşağıdaki adımları izleyin:'),
+            SizedBox(height: 12),
+            Text('1. "Kullanım erişimi" listesini açın.'),
+            Text('2. Listeden "Makay Dosya Yöneticisi"ni bulup seçin.'),
+            Text('3. Anahtarı açıp izni verin, sonra uygulamaya dönün.'),
+            SizedBox(height: 12),
+            Text(
+              '"Erişim reddedildi" çıkarsa (Android 13+ kısıtlı ayarlar): '
+              '"Uygulama bilgisini aç" deyin, sağ üstteki ⋮ menüsünden '
+              '"Kısıtlı ayarlara izin ver" seçeneğini açın ve 1-3. '
+              'adımları tekrarlayın.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              PlatformService.openAppSettings();
+            },
+            child: const Text('Uygulama bilgisini aç'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              PlatformService.openUsageAccessSettings();
+            },
+            child: const Text('Kullanım erişimi'),
+          ),
+        ],
       ),
     );
   }
