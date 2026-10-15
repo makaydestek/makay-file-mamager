@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../models/file_entry.dart';
 import '../utils/debug_log.dart';
+import '../utils/nomedia.dart';
 import 'platform_service.dart';
 
 /// Kategori kırılımı: kategori adı → toplam boyut (bayt).
@@ -76,21 +77,30 @@ class AnalysisService {
     return result;
   }
 
+  /// [path] klasörünün özyinelemeli boyutu; galeride gizlenen
+  /// (`.nomedia` işaretli) **alt** klasörler atlanır (kökün kendisi değil:
+  /// analiz kırılımı klasörün içeriğini ölçmeye devam eder).
   Future<int> _dirSize(String path) async {
     var total = 0;
-    try {
-      final dir = Directory(path);
-      await for (final e in dir.list(recursive: true, followLinks: false)) {
-        if (e is File) {
-          try {
-            total += await e.length();
-          } catch (e) {
-            logSwallowed('analiz: dosya boyutu', e);
+    final stack = <String>[path];
+    while (stack.isNotEmpty) {
+      try {
+        await for (final e in Directory(stack.removeLast())
+            .list(followLinks: false)) {
+          if (e is File) {
+            try {
+              total += await e.length();
+            } catch (err) {
+              logSwallowed('analiz: dosya boyutu', err);
+            }
+          } else if (e is Directory) {
+            if (await isHiddenByNomediaAsync(e.path)) continue;
+            stack.add(e.path);
           }
         }
+      } catch (e) {
+        logSwallowed('analiz: klasör listesi', e);
       }
-    } catch (e) {
-      logSwallowed('analiz: klasör listesi', e);
     }
     return total;
   }

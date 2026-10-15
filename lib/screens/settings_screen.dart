@@ -19,6 +19,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Ayarlar')),
       body: ListView(
@@ -103,7 +104,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           ListTile(
             title: const Text('İzinler'),
-            subtitle: const Text('Dosya ve medya izinlerini yönet'),
+            subtitle: const Text('Tüm erişim izinlerini gör ve değiştir'),
             leading: const Icon(Icons.shield_rounded),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const PermissionsScreen()),
@@ -210,29 +211,13 @@ class SettingsScreen extends StatelessWidget {
           _checkTile(context, 'Gizle/Gizleme', false),
           _checkTile(context, 'Farklı aç', false),
           const Divider(),
-          _sectionHeader(context, 'Hakkında'),
-          ListTile(
-            title: const Text('Sürüm'),
-            subtitle: FutureBuilder<PackageInfo>(
-              future: PackageInfo.fromPlatform(),
-              builder: (context, snapshot) => Text(
-                snapshot.hasData
-                    ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
-                    : '…',
-              ),
-            ),
-            leading: const Icon(Icons.info_outline_rounded),
-          ),
+          _aboutHeader(context),
+          _aboutCard(context, theme),
           ListTile(
             title: const Text('Güncelleme kontrolü'),
             subtitle: const Text('GitHub deposunda yeni sürüm var mı bak'),
             leading: const Icon(Icons.system_update_rounded),
             onTap: () => _checkUpdate(context),
-          ),
-          const ListTile(
-            title: Text('Hakkında'),
-            subtitle: Text(
-                'Makay Dosya Yöneticisi • Reklamsız • Tüm özellikler ücretsiz'),
           ),
           const SizedBox(height: 24),
         ],
@@ -248,6 +233,80 @@ class SettingsScreen extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.bold,
               ),
+        ),
+      );
+
+  /// Hakkında başlığı (bilgi simgesi + başlık; Makay ekosistemiyle aynı
+  /// görünüm).
+  static Widget _aboutHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Icon(Icons.info_rounded, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            'Hakkında',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ekosistem uyumlu Hakkında kartı (Makay Cleaner ile birebir yapı):
+  /// uygulama adı + sürüm, Geliştirici bilgisi ve telif satırı.
+  static Widget _aboutCard(BuildContext context, ThemeData theme) => Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Makay Dosya Yöneticisi',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Sürüm: ${snapshot.hasData ? snapshot.data!.version : '…'}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 14),
+                Text(
+                  'Geliştirici',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Bu uygulamanın tasarımı ve geliştirmesi Murat AKAY '
+                  'tarafından yapılmıştır.',
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Text(
+                  '© ${DateTime.now().year} Tüm hakları saklıdır. Sideload '
+                  '/ yerel dağıtım için hazırlanmıştır.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
 

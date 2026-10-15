@@ -8,8 +8,9 @@ import '../utils/app_paths.dart';
 
 /// Ağdan erişim ekranı: gömülü FTP/FTPS ve SMB2 sunucularını başlat/durdur.
 ///
-/// Referans uygulamadaki "Ağdan erişim" ekranının karşılığı:
-/// rastgele şifre, gizli dosyaları göster, BAŞLAT/DURDUR.
+/// Referans uygulamadaki "Ağdan erişim" ekranının karşılığı: sunucu adresi
+/// `ftp://<ip>:6586`, kullanıcı adı `admin`, şifre rastgele (her açılışta
+/// değişir), gizli dosyaları göster, BAŞLAT/DURDUR.
 class NetworkAccessScreen extends StatefulWidget {
   const NetworkAccessScreen({super.key});
 
@@ -24,7 +25,10 @@ class _NetworkAccessScreenState extends State<NetworkAccessScreen> {
 
   bool _randomPassword = true;
   bool _showHidden = false;
-  final _username = 'android';
+
+  /// Referans uygulamayla birebir: FTP kullanıcısı `admin`,
+  /// şifre her açılışta rastgele üretilir.
+  final _username = 'admin';
   String _password = '';
   String _ipAddress = '…';
 
@@ -84,7 +88,8 @@ class _NetworkAccessScreenState extends State<NetworkAccessScreen> {
     final root = await AppPaths.byCategory('internal');
     final server = MiniFtpServer(
       rootPath: root ?? '/',
-      port: 2121,
+      port: 6586,
+      tlsPort: 6588,
       username: _username,
       password: _randomPassword ? _password : _password,
       showHidden: _showHidden,
@@ -206,13 +211,13 @@ class _NetworkAccessScreenState extends State<NetworkAccessScreen> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.language_rounded),
-                    title: Text('Sunucu adresi: $_ipAddress:2121'),
+                    title: Text('Sunucu adresi: $_ipAddress:6586'),
                     subtitle: Text(
                       running
-                          ? 'Kullanıcı: android  •  Şifre yukarıda\n'
-                              'Şifreli FTPS: $_ipAddress:2123 '
+                          ? 'Kullanıcı: admin  •  Şifre yukarıda\n'
+                              'Şifreli FTPS: $_ipAddress:6588 '
                               '(kendi kendine imzalı sertifika)'
-                          : 'Şifreli FTPS: port 2123',
+                          : 'Şifreli FTPS: port 6588',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -323,7 +328,7 @@ class _NetworkAccessScreenState extends State<NetworkAccessScreen> {
               child: Text(
                 'İpucu: Bilgisayarınızda dosya yöneticisinin "Ağ / FTP" '
                 'bağlantısıyla bu adrese bağlanabilir ya da tarayıcıdan '
-                'ftp://$_ipAddress:2121 adresini ziyaret edebilirsiniz.',
+                'ftp://$_ipAddress:6586 adresini ziyaret edebilirsiniz.',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.outline),
               ),

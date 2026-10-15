@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/debug_log.dart';
 import '../utils/formats.dart';
+import '../utils/nomedia.dart';
 import 'platform_service.dart';
 import 'recent_seen_store.dart';
 import 'remote_service.dart';
@@ -493,6 +494,9 @@ class CategorySizeService {
         if (name.isEmpty || name.startsWith('.')) continue;
         if (e is Directory) {
           if (name == 'LOST.DIR') continue;
+          // Galeri'de gizlenen (`.nomedia` işaretli) klasörler kart
+          // toplamına girmez: medya listeleriyle birebir aynı kalır.
+          if (isHiddenByNomedia(e.path, name: name)) continue;
           stack.add(e.path);
         } else if (e is File) {
           final category = categoryOfExtension(_extensionOf(name));
@@ -530,6 +534,10 @@ class CategorySizeService {
             logSwallowed('kategori boyutu: dosya boyutu', e);
           }
         } else if (e is Directory) {
+          // Galeri gizlemesi (`.nomedia`): yalnız "gizli gizle" modunda
+          // atlanır; ekranın varsayılan görünümüyle toplam birebir aynı
+          // kalır (kök klasörün kendisi değil, alt klasörleri kontrol edilir).
+          if (skipHidden && isHiddenByNomedia(e.path)) continue;
           total += dirSize(e.path, skipHidden: skipHidden);
         }
       }

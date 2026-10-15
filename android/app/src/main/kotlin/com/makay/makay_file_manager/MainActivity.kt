@@ -159,6 +159,39 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "canRequestPackageInstalls" -> {
+                        // APK kurulumu için "bilinmeyen kaynaklar" izni durumu
+                        // (Android 8 altı her zaman izinli sayılır).
+                        try {
+                            val ok = Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                                packageManager.canRequestPackageInstalls()
+                            result.success(ok)
+                        } catch (e: Exception) {
+                            result.error("install_error", e.message, null)
+                        }
+                    }
+
+                    "openInstallUnknownSources" -> {
+                        // Yalnız bu paket için "Bilinmeyen kaynaklar" ekranı;
+                        // açılamazsa genel güvenlik ayarlarına düşülür.
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.success(false)
+                            }
+                        }
+                    }
+
                     "getApkInfo" -> {
                         // İndirilenler'de APK'ya dokununca kurulum öncesi bilgi.
                         val path = call.argument<String>("path")

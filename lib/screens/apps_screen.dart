@@ -179,13 +179,33 @@ class _AppsScreenState extends State<AppsScreen>
         subtitle: const Text(
             'Tam boyut için izin vermek adına dokunun.'),
         trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: _showUsageGuide,
+        onTap: _onUsageBannerTap,
       ),
     );
   }
 
+  /// Banner'a dokununca önce izin durumu doğrulanır: izin zaten verilmişse
+  /// rehber yerine liste yenilenip kullanıcıya onay verilir; izin yoksa
+  /// adım adım rehber açılır.
+  Future<void> _onUsageBannerTap() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final granted = await PlatformService.hasUsageAccess();
+    if (!mounted) return;
+    if (granted) {
+      setState(() => _usageAccess = true);
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Kullanım erişimi verildi — boyutlar yenileniyor.'),
+      ));
+      _load();
+      return;
+    }
+    _showUsageGuide();
+  }
+
   /// Kullanım erişimi izni için adım adım rehber.
   void _showUsageGuide() {
+    // pop sonrası geri bildirim için messenger'ı önceden al.
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -202,10 +222,13 @@ class _AppsScreenState extends State<AppsScreen>
             Text('3. Anahtarı açıp izni verin, sonra uygulamaya dönün.'),
             SizedBox(height: 12),
             Text(
-              '"Erişim reddedildi" çıkarsa (Android 13+ kısıtlı ayarlar): '
-              '"Uygulama bilgisini aç" deyin, sağ üstteki ⋮ menüsünden '
-              '"Kısıtlı ayarlara izin ver" seçeneğini açın ve 1-3. '
-              'adımları tekrarlayın.',
+              '"Erişim reddedildi" çıkarsa (MIUI / Android 13+ kısıtlı '
+              'ayarlar): "Uygulama bilgisini aç" deyin, sağ üstteki ⋮ '
+              'menüsünden "Kısıtlı ayarlara izin ver" seçeneğini açın ve '
+              '1-3. adımları tekrarlayın. Bu menü yoksa (MIUI): Ayarlar → '
+              'Uygulamalar → Makay Dosya Yöneticisi → İzinlar altında '
+              '"Kullanım erişimi / Uygulama kullanım verileri" anahtarını '
+              'açın.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -216,16 +239,30 @@ class _AppsScreenState extends State<AppsScreen>
             child: const Text('İptal'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              PlatformService.openAppSettings();
+              final ok = await PlatformService.openAppSettings();
+              if (!ok) {
+                messenger.showSnackBar(const SnackBar(
+                  content: Text(
+                      'Sayfa açılamadı — Ayarlar → Uygulamalar → Makay '
+                      'Dosya Yöneticisi yolunu elle izleyin.'),
+                ));
+              }
             },
             child: const Text('Uygulama bilgisini aç'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              PlatformService.openUsageAccessSettings();
+              final ok = await PlatformService.openUsageAccessSettings();
+              if (!ok) {
+                messenger.showSnackBar(const SnackBar(
+                  content: Text(
+                      'Kullanım erişimi sayfası açılamadı — Ayarlar → '
+                      'Uygulamalar → Kullanım erişimi yolunu elle izleyin.'),
+                ));
+              }
             },
             child: const Text('Kullanım erişimi'),
           ),

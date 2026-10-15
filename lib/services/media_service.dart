@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../utils/debug_log.dart';
+import '../utils/nomedia.dart';
 import 'category_size_service.dart';
 
 /// Bir medya albümü (klasör).
@@ -113,6 +114,9 @@ class MediaService {
     );
     final albums = <MediaAlbum>[];
     for (final path in paths) {
+      // Galeri'de "Gizli" yapılan (`.nomedia` işaretli) klasörlerin
+      // albümleri listeye alınmaz.
+      if (await _isHiddenAlbum(path)) continue;
       final assets = await _loadAll(path, categoryId);
       var count = assets.length;
       if (assets.length >= maxAlbumAssets) {
@@ -138,6 +142,22 @@ class MediaService {
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
     return albums;
+  }
+
+  /// Albüm klasörü galeride gizli mi (`.nomedia` ile işaretli)?
+  ///
+  /// Yalnız Android'de ve klasör yolu bilinen albümlerde uygulanır;
+  /// "Tüm Dosyalar" (relativePath = null) hiçbir zaman gizlenmez.
+  Future<bool> _isHiddenAlbum(AssetPathEntity path) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final rel = await path.relativePathAsync;
+      if (rel == null || rel.isEmpty) return false;
+      return await isHiddenByNomediaAsync('/storage/emulated/0/$rel');
+    } catch (e) {
+      logSwallowed('medya: gizli albüm kontrolü', e);
+      return false;
+    }
   }
 
   /// Albümün varlıklarını sayfa sayfa getirir (yalnız istenen kategori).

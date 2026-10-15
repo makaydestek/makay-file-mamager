@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../models/file_entry.dart';
 import '../utils/debug_log.dart';
+import '../utils/nomedia.dart';
 import 'category_size_service.dart';
 import 'transfer.dart';
 
@@ -40,6 +41,12 @@ class FileService {
           : entity.uri.pathSegments[entity.uri.pathSegments.length - 1];
       final cleanName = name.isEmpty ? entity.path.split(Platform.pathSeparator).last : name;
       if (!showHidden && cleanName.startsWith('.')) continue;
+      // Galeri'de "Gizli" yapılan (`.nomedia` işaretli) klasörler gizli
+      // tutulur; gizli dosyalar gösterilirken bu klasörler de görünür.
+      if (!showHidden && entity is Directory &&
+          await isHiddenByNomediaAsync(entity.path)) {
+        continue;
+      }
       try {
         final stat = await entity.stat();
         entries.add(FileEntry(

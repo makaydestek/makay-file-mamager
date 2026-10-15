@@ -41,6 +41,30 @@ class AlbumScreen extends StatefulWidget {
   State<AlbumScreen> createState() => _AlbumScreenState();
 }
 
+/// Albüm içi sıralama modları (referans uygulamadaki sıralama menüsü).
+enum _SortMode {
+  dateDesc('Tarih (Yeni → Eski)'),
+  dateAsc('Tarih (Eski → Yeni)'),
+  nameAsc('Ada göre (A → Z)'),
+  nameDesc('Ada göre (Z → A)'),
+  sizeDesc('Boyut (Büyük → Küçük)');
+
+  const _SortMode(this.label);
+  final String label;
+}
+
+/// Albüm içi tarih filtresi (referans uygulamadaki filtreleme).
+enum _DateFilter {
+  all('Tümü'),
+  today('Bugün'),
+  week('Son 7 gün'),
+  month('Son 30 gün'),
+  custom('Özel aralık…');
+
+  const _DateFilter(this.label);
+  final String label;
+}
+
 class _AlbumScreenState extends State<AlbumScreen> {
   static const _service = MediaService();
   static const _pageSize = 200;
@@ -50,6 +74,20 @@ class _AlbumScreenState extends State<AlbumScreen> {
   bool _loading = true;
   bool _hasMore = true;
   bool _working = false;
+
+  // Sıralama ve filtre (menülerden seçilir; varsayılan tarih ↓).
+  _SortMode _sort = _SortMode.dateDesc;
+  _DateFilter _dateFilter = _DateFilter.all;
+  DateTimeRange? _customRange;
+  String _typeFilter = '';
+  List<AssetEntity>? _visibleCache;
+
+  /// Herhangi bir filtre aktif mi (filtre ikonu vurgusu için).
+  bool get _filtering =>
+      _dateFilter != _DateFilter.all || _typeFilter.isNotEmpty;
+
+  /// Ada göre sıralama için başlıklar (asset kimliği → dosya adı).
+  static final Map<String, String> _titleCache = {};
 
   bool get _selecting => _selected.isNotEmpty;
 
@@ -71,18 +109,188 @@ class _AlbumScreenState extends State<AlbumScreen> {
       _assets.addAll(page);
       _hasMore = page.length >= _pageSize;
       _loading = false;
+      _visibleCache = null;
     });
     // Boyutlar arka planda çözülür; başlıktaki "Toplam" hazır oldukça
     // tazelenir (ana iş parçacığı dosya boyutu okumak için durmaz).
     unawaited(MediaService.resolveSizes(page).then((_) {
-      if (mounted) setState(() {});
+      if (mounted) setState(() => _visibleCache = null);
     }));
   }
 
   /// Albümün toplam öğesi ve boyutu (başlık altında özet).
   int get _totalCount => _assets.length;
 
-  int get _totalBytes => MediaService.totalSizeOf(_assets);
+  /// Filtre+ sıralama uygulanmış görünür liste (önbellekli).
+  List<AssetEntity> get _visible => _visibleCache ??= _computeVisible();
+
+  List<AssetEntity> _computeVisible() {
+    var list = _assets;
+    final from = _filterFrom;
+    final to = _filterTo;
+    if (from != null || to != null) {
+      list = list.where((a) {
+        final t = a.createDateTime;
+        if (from != null && t.isBefore(from)) return false;
+        if (to != null && !t.isBefore(to)) return false;
+        return true;
+      }).toList();
+    }
+    if (_typeFilter.isNotEmpty) {
+      list = list.where((a) => _extOf(a) == _typeFilter).toList();
+    }
+    list = List<AssetEntity>.of(list);
+    switch (_sort) {
+      case _SortMode.dateDesc:
+        list.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+      case _SortMode.dateAsc:
+        list.sort((a, b) => a.createDateTime.compareTo(b.createDateTime));
+      case _SortMode.nameAsc:
+        list.sort((a, b) => _nameOf(a).toLowerCase().compareTo(_nameOf(b).toLowerCase()));
+      case _SortMode.nameDesc:
+        list.sort((a, b) => _nameOf(b).toLowerCase().compareTo(_nameOf(a).toLowerCase()));
+      case _SortMode.sizeDesc:
+        list.sort((a, b) =>
+            MediaService.sizeOf(b).compareTo(MediaService.sizeOf(a)));
+    }
+    return list;
+  }
+
+  /// Ada göre sıralama için dosya adı (önbellek; yoksa kimlik kullanılır).
+  String _nameOf(AssetEntity a) => _titleCache[a.id] ?? a.id;
+
+  /// Seçilen tarih filtresinin başlangıcı (null = Tümü).
+  DateTime? get _filterFrom {
+    switch (_dateFilter) {
+      case _DateFilter.all:
+        return null;
+      case _DateFilter.today:
+        final now = DateTime.now();
+        return DateTime(now.year, now.month, now.day);
+      case _DateFilter.week:
+        return DateTime.now().subtract(const Duration(days: 7));
+      case _DateFilter.month:
+        return DateTime.now().subtract(const Duration(days: 30));
+      case _DateFilter.custom:
+        return _customRange?.start;
+    }
+  }
+
+  /// Seçilen tarih filtresinin bitişi (null = sınırsız).
+  DateTime? get _filterTo {
+    if (_dateFilter == _DateFilter.custom && _customRange != null) {
+      // Seçilen bitiş gününün tamamı dâhil edilir.
+      return _customRange!.end.add(const Duration(days: 1));
+    }
+    return null;
+  }
+
+  /// Sıralama değişti: ada göre için başlıklar, boyut için bayt boyutları
+  /// önce çözülür; menü seçimi bekletir ve hazır olunca liste yeniden çizilir.
+  Future<void> _changeSort(_SortMode mode) async {
+    if (mode == _sort) return;
+    setState(() {
+      _sort = mode;
+      _working = true;
+    });
+    try {
+      if (mode == _SortMode.nameAsc || mode == _SortMode.nameDesc) {
+        await _ensureTitles();
+      } else if (mode == _SortMode.sizeDesc) {
+        await MediaService.resolveSizes(_assets);
+      }
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  /// Albümdeki tüm başlıkların bir kez çözülmesi (ada göre sıralama için).
+  Future<void> _ensureTitles() async {
+    for (final a in _assets) {
+      if (_titleCache.containsKey(a.id)) continue;
+      try {
+        _titleCache[a.id] = await a.titleAsync;
+      } catch (e) {
+        logSwallowed('albüm: başlık sıralama', e);
+        _titleCache[a.id] = a.id;
+      }
+    }
+  }
+
+  /// Filtre menüsü seçimi: tarih grubu ya da dosya türü grubu.
+  void _onFilterSelected(Object value) {
+    if (value is _DateFilter) {
+      unawaited(_changeDateFilter(value));
+    } else if (value is String) {
+      setState(() {
+        _typeFilter = value;
+        _visibleCache = null;
+      });
+    }
+  }
+
+  /// Tarih filtresi: "Özel aralık…" seçilirse aralık seçici açılır;
+  /// seçim iptal edilirse önceki filtre korunur.
+  Future<void> _changeDateFilter(_DateFilter filter) async {
+    if (filter == _DateFilter.custom) {
+      final now = DateTime.now();
+      final range = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(now.year - 5),
+        lastDate: now,
+        initialDateRange: _customRange,
+      );
+      if (range == null || !mounted) return;
+      setState(() {
+        _dateFilter = _DateFilter.custom;
+        _customRange = range;
+        _visibleCache = null;
+      });
+      return;
+    }
+    setState(() {
+      _dateFilter = filter;
+      _visibleCache = null;
+    });
+  }
+
+  /// Dosya uzantısı (tür filtresi için): MIME tipi Android'de senkron
+  /// gelir; yoksa başlık önbelleğindeki dosya adına düşülür.
+  String _extOf(AssetEntity a) {
+    const mimeExt = <String, String>{
+      'image/jpeg': 'jpg',
+      'video/quicktime': 'mov',
+      'video/x-matroska': 'mkv',
+      'video/x-msvideo': 'avi',
+      'audio/mpeg': 'mp3',
+      'audio/mp4': 'm4a',
+      'audio/x-wav': 'wav',
+      'audio/x-ms-wma': 'wma',
+    };
+    final mime = a.mimeType?.toLowerCase();
+    if (mime != null && mime.isNotEmpty) {
+      return mimeExt[mime] ?? mime.split('/').last;
+    }
+    final name = _nameOf(a);
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot >= name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  /// Albümde görünen uzantılar (tür filtresi menüsü).
+  List<String> _knownExtensions() {
+    final out = <String>{};
+    for (final a in _assets) {
+      final e = _extOf(a);
+      if (e.isNotEmpty) out.add(e);
+    }
+    return out.toList()..sort();
+  }
+
+  /// Menüde gösterilecek kısa tarih (12.3.2026).
+  static String _dateLabel(DateTime d) => '${d.day}.${d.month}.${d.year}';
+
+  int get _totalBytes => MediaService.totalSizeOf(_visible);
 
   void _toggleSelect(AssetEntity asset) {
     setState(() {
@@ -281,6 +489,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(ok ? 'Silindi: ${ids.length} öğe' : 'Silinemedi')),
     );
+    if (mounted) setState(() => _visibleCache = null);
   }
 
   /// Seçili dosyaları sistem paylaşım sayfasıyla paylaşır.
@@ -333,8 +542,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
         title: _selecting
             ? Text('${_selected.length} seçili')
             : Text(widget.title),
-        // Toplam özet: albümdeki öğe sayısı + toplam boyut (toplam boyutun
-        // eksiksiz gösterilmesi için). Liste büyüdükçe setState ile tazelenir.
+        // Toplam özet: görünür öğe sayısı + toplam boyut (filtre/arama
+        // uygulandığında "görünür / toplam" olarak yazılır).
         bottom: _selecting
             ? null
             : PreferredSize(
@@ -344,7 +553,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   child: Text(
                     _assets.isEmpty && !_hasMore
                         ? 'Öğe yok'
-                        : '$_totalCount öğe • Toplam '
+                        : '${_visible.length == _totalCount ? '' : '${_visible.length}/'}'
+                            '$_totalCount öğe • Toplam '
                             '${Formats.size(_totalBytes)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -373,7 +583,73 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   onPressed: _working ? null : _shareSelected,
                 ),
               ]
-            : null,
+            : [
+                // Sıralama menüsü (referans uygulamadaki gibi).
+                PopupMenuButton<_SortMode>(
+                  icon: const Icon(Icons.sort_rounded),
+                  tooltip: 'Sırala',
+                  onSelected: _changeSort,
+                  itemBuilder: (context) => [
+                    for (final mode in _SortMode.values)
+                      PopupMenuItem<_SortMode>(
+                        value: mode,
+                        child: _MenuLabel(
+                          label: mode.label,
+                          selected: _sort == mode,
+                        ),
+                      ),
+                  ],
+                ),
+                // Filtre menüsü: tarih aralığı + dosya türü.
+                PopupMenuButton<Object>(
+                  icon: Icon(
+                    Icons.filter_alt_rounded,
+                    color: _filtering
+                        ? null
+                        : Theme.of(context).colorScheme.primary,
+                  ),
+                  tooltip: 'Filtrele',
+                  onSelected: _onFilterSelected,
+                  itemBuilder: (context) => [
+                    for (final f in _DateFilter.values)
+                      PopupMenuItem<Object>(
+                        value: f,
+                        child: _MenuLabel(
+                          label: f == _DateFilter.custom &&
+                                  _customRange != null
+                              ? 'Özel aralık: '
+                                  '${_dateLabel(_customRange!.start)} – '
+                                  '${_dateLabel(_customRange!.end)}'
+                              : f.label,
+                          selected: _dateFilter == f,
+                        ),
+                      ),
+                    const PopupMenuDivider(),
+                    PopupMenuItem<Object>(
+                      enabled: false,
+                      child: Text(
+                        'Dosya türü',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ),
+                    PopupMenuItem<Object>(
+                      value: '',
+                      child: _MenuLabel(
+                        label: 'Tümü',
+                        selected: _typeFilter.isEmpty,
+                      ),
+                    ),
+                    for (final e in _knownExtensions())
+                      PopupMenuItem<Object>(
+                        value: e,
+                        child: _MenuLabel(
+                          label: e.toUpperCase(),
+                          selected: _typeFilter == e,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -384,9 +660,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 mainAxisSpacing: 4,
                 crossAxisSpacing: 4,
               ),
-              itemCount: _assets.length + (_hasMore ? 1 : 0),
+              itemCount: _visible.length + (_hasMore ? 1 : 0),
               itemBuilder: (context, index) {
-                if (index >= _assets.length) {
+                if (index >= _visible.length) {
                   _loadPage();
                   return const Center(
                       child: Padding(
@@ -394,7 +670,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     child: CircularProgressIndicator(),
                   ));
                 }
-                final asset = _assets[index];
+                final asset = _visible[index];
                 final selected = _selected.contains(asset.id);
                 return InkWell(
                   onTap: () => _selecting
@@ -428,6 +704,30 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 );
               },
             ),
+    );
+  }
+}
+
+/// Menü satırı: seçili ise yanında ✓ bulunan etiket.
+class _MenuLabel extends StatelessWidget {
+  const _MenuLabel({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (selected)
+          Icon(Icons.check_rounded,
+              size: 18, color: Theme.of(context).colorScheme.primary)
+        else
+          const SizedBox(width: 18),
+        const SizedBox(width: 8),
+        Text(label),
+      ],
     );
   }
 }
