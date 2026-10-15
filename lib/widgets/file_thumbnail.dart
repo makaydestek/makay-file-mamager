@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/file_entry.dart';
 import '../services/platform_service.dart';
+import '../utils/folder_glyph.dart';
 
 /// Dosya/klasör için satır ve ızgara önizlemesi.
 ///
@@ -92,9 +93,39 @@ class FileThumbnail extends StatelessWidget {
             ),
           ),
         );
+      case FileKind.folder:
+        // Referans görünümü: dolu amber klasör + bilinen adlarda iç simge.
+        return _folderBadge(radius);
       default:
         return _fallback(radius);
     }
+  }
+
+  /// Klasör rozeti: amber klasör ikonunun üzerine iç simge (varsa).
+  Widget _folderBadge(BorderRadius radius) {
+    final glyph = FolderGlyph.of(entry.name);
+    if (glyph == null) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Icon(Icons.folder_rounded, size: size * 0.92, color: entry.color),
+      );
+    }
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(Icons.folder_rounded, size: size * 0.92, color: entry.color),
+          // Simge klasörün gövdesinde (ikon kutusunun orta hizasında).
+          Align(
+            alignment: const Alignment(0, 0.14),
+            child: Icon(glyph, size: size * 0.34, color: Colors.white),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Renkli tip ikonu (görsel değil ya da görsel okunamadı).

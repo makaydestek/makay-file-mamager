@@ -236,6 +236,9 @@ class _BrowseLauncher extends StatelessWidget {
         return BrowserScreen(
           title: category?.title ?? 'Dosyalar',
           rootPath: snapshot.data,
+          // Kategori kökleri (Ana bellek, İndirilenler, ...) referans
+          // uygulamadaki gibi hamburger menü + üst satır ile açılır.
+          showRootDrawer: true,
         );
       },
     );

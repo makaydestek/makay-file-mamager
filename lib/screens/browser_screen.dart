@@ -17,8 +17,10 @@ import '../utils/debug_log.dart';
 import '../utils/file_opener.dart';
 import '../utils/formats.dart';
 import '../widgets/apk_install_dialog.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/file_thumbnail.dart';
 import '../widgets/folder_tree_panel.dart';
+import '../widgets/root_header.dart';
 import '../widgets/transfer_progress_dialog.dart';
 import 'archive_screen.dart';
 import 'hex_viewer_screen.dart';
@@ -39,6 +41,7 @@ class BrowserScreen extends StatefulWidget {
     required this.title,
     required this.rootPath,
     this.showHomeShortcut = true,
+    this.showRootDrawer = false,
   });
 
   final String title;
@@ -49,6 +52,13 @@ class BrowserScreen extends StatefulWidget {
   /// Taşma menüsünde "Ana ekrana dön" kısayolu gösterilsin mi.
   final bool showHomeShortcut;
 
+  /// Kök seviye (Ana bellek / kategori kökleri) mi?
+  ///
+  /// Kök seviyede referans uygulamadaki gibi hamburger menü (çekmece) ve
+  /// app bar altında yol/kullanım satırı gösterilir; alt klasörlere girişte
+  /// geri ok korunur.
+  final bool showRootDrawer;
+
   @override
   State<BrowserScreen> createState() => _BrowserScreenState();
 }
@@ -56,9 +66,22 @@ class BrowserScreen extends StatefulWidget {
 class _BrowserScreenState extends State<BrowserScreen> {
   static const _service = FileService();
 
+  /// Çekmeceyi (hamburger menü) açmak için.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   late String _path;
   List<FileEntry> _entries = [];
   bool _loading = true;
+
+  /// Klasör başına doğrudan çocuk sayısı (yol → adet).
+  ///
+  /// Her yüklemede sıfırlanır; sayılar arka planda toplanır, gelince
+  /// satırda "N öğe" olarak görünür. Sayılamayan klasörlerde null tutulur
+  /// ve satır yalnız "Klasör" yazar.
+  Map<String, int?> _childCounts = {};
+
+  /// Sayım üst sınırı ("9999+" gösterilir).
+  static const int _countCap = 9999;
 
   // Sıralama.
   bool _sortByName = true;
@@ -91,7 +114,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       setState(() => _loading = false);
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      // İçerik yenilendi; eski adetler bayat olabilir.
+      _childCounts = {};
+    });
     final showHidden = false;
     var entries = await _service.listDirectory(_path, showHidden: showHidden);
     entries = _sort(entries);
@@ -101,6 +128,45 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _loading = false;
       _selected.clear();
     });
+    // Adetler liste görünürken arka planda toplanır (satır "N öğe" yazar).
+    _loadChildCounts(entries);
+  }
+
+  /// Klasörlerin doğrudan çocuk sayılarını arka planda toplar.
+  ///
+  /// Erişilemeyen klasörlerde (izin vb.) sayı null kalır. Gizli (nokta)
+  /// girdiler, listeyle aynı kural gereği sayılmaz.
+  Future<void> _loadChildCounts(List<FileEntry> entries) async {
+    for (final e in entries) {
+      if (!e.isDirectory) continue;
+      int? count;
+      try {
+        var n = 0;
+        await for (final child in Directory(e.path).list(followLinks: false)) {
+          // Uri'de klasörler sondaki boş segmentle biter; ad son dolu segment.
+          final segments = child.uri.pathSegments;
+          var i = segments.length - 1;
+          while (i >= 0 && segments[i].isEmpty) {
+            i--;
+          }
+          final name = i >= 0 ? segments[i] : '';
+          if (name.startsWith('.')) continue;
+          if (++n > _countCap) break;
+        }
+        count = n;
+      } catch (_) {
+        count = null;
+      }
+      if (!mounted) return;
+      setState(() => _childCounts[e.path] = count);
+    }
+  }
+
+  /// Klasör satır altı metni: adet biliniyorsa "N öğe", değilse "Klasör".
+  String _folderSubtitle(FileEntry e) {
+    final n = _childCounts[e.path];
+    if (n == null) return 'Klasör';
+    return n > _countCap ? '$_countCap+ öğe' : '$n öğe';
   }
 
   List<FileEntry> _sort(List<FileEntry> entries) {
@@ -843,13 +909,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
 
     return Scaffold(
+      key: _scaffoldKey,
+      // Kök seviyede referans uygulamadaki gibi çekmece (hamburger) menüsü.
+      drawer: widget.showRootDrawer ? const AppDrawer() : null,
       appBar: AppBar(
         leading: _selecting
             ? IconButton(
                 icon: const Icon(Icons.close_rounded),
                 onPressed: () => setState(_selected.clear),
               )
-            : null,
+            : (widget.showRootDrawer
+                ? IconButton(
+                    icon: const Icon(Icons.menu_rounded),
+                    tooltip: 'Menü',
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  )
+                : null),
         title: _selecting
             ? Text('${_selected.length} seçili')
             : (_searchActive
@@ -993,6 +1068,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         children: [
           // Yer tutucu: ListenableBuilder'ı gövdede tutmak için.
           Offstage(child: clipboard),
+          // Kök seviye: yol göstergesi + "KULLANILAN %x" rozeti.
+          if (widget.showRootDrawer) const RootHeader(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1093,19 +1170,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
           selected: selected,
           selectedTileColor:
               Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-          // Resim/videoda gerçek küçük resim, diğerlerinde renkli ikon.
+          // Resim/videoda gerçek küçük resim, klasörde amber klasör + simge,
+          // diğerlerinde renkli tip ikonu.
           leading: SizedBox(
             width: 40,
             height: 40,
             child: FileThumbnail(entry: e, size: 40),
           ),
           title: Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          // Referans uygulamadaki gibi "(Tarih • Boyut)" biçiminde.
+          // Referans satır düzeni: klasörde adet ("3 öğe"), dosyada boyut.
           subtitle: Text(
-            '(${Formats.date(e.modified, pattern: datePattern)}'
-            '${e.isDirectory ? ' • Klasör' : ' • ${Formats.size(e.size)}'})',
+            e.isDirectory ? _folderSubtitle(e) : Formats.size(e.size),
             maxLines: 1,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
           ),
+          // Sağda tarih + satır menüsü (seçim modunda seçim göstergesi).
           trailing: _selecting
               ? Icon(
                   selected
@@ -1115,10 +1196,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       ? Theme.of(context).colorScheme.primary
                       : Colors.grey,
                 )
-              : IconButton(
-                  icon: const Icon(Icons.more_vert_rounded, size: 20),
-                  tooltip: 'Daha fazla',
-                  onPressed: () => _rowMenu(e),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      Formats.date(e.modified, pattern: datePattern),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Theme.of(context).colorScheme.outline),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert_rounded, size: 20),
+                      tooltip: 'Daha fazla',
+                      onPressed: () => _rowMenu(e),
+                    ),
+                  ],
                 ),
           onTap: () => _open(e),
           onLongPress: () => _toggleSelect(e),
@@ -1215,7 +1308,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ),
                 Text(
                   e.isDirectory
-                      ? 'Klasör'
+                      ? _folderSubtitle(e)
                       : Formats.size(e.size),
                   maxLines: 1,
                   textAlign: TextAlign.center,

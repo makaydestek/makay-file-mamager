@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makay_file_manager/models/file_entry.dart';
@@ -82,7 +80,8 @@ void main() {
     await pump(
       tester,
       FileThumbnail(
-        entry: entry(name: 'klasor', isDirectory: true),
+        // Görsel olmayan tür (fallback) Container dekorasyonu kullanır.
+        entry: entry(name: 'klasor_sarkisi.mp3'),
         size: 96,
         borderRadius: 16,
       ),

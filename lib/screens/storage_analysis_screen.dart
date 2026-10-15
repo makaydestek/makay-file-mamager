@@ -5,8 +5,8 @@ import '../services/analysis_service.dart';
 import '../services/platform_service.dart';
 import '../utils/formats.dart';
 import '../utils/text_utils.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/app_icon.dart';
-import '../widgets/treemap_view.dart';
 import 'apps_screen.dart';
 import 'large_files_screen.dart';
 
@@ -20,6 +20,23 @@ class StorageAnalysisScreen extends StatefulWidget {
 
 class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
   static const _analysis = AnalysisService();
+
+  /// Çekmeceyi (hamburger menü) açmak için.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// Referans analiz ekranındaki kategori sırası (2'li satırlar hâlinde:
+  /// Görüntüler|Ses, Videolar|Belgeler, Arşivler|Diğerleri).
+  static const List<String> _kBreakdownOrder = [
+    'Resimler',
+    'Ses',
+    'Videolar',
+    'Belgeler',
+    'Arşivler',
+    'Diğerleri',
+  ];
+
+  /// Kategori adı gösterimi: referans ekranda "Resimler" → "Görüntüler".
+  static String _label(String key) => key == 'Resimler' ? 'Görüntüler' : key;
 
   /// "Büyük dosyalar" başlığındaki toplamın hesaplandığı üst sınır.
   ///
@@ -70,7 +87,33 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Bellek Analizi')),
+      key: _scaffoldKey,
+      // Referans ekrandaki gibi çekmece (hamburger) menüsü.
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          tooltip: 'Menü',
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        title: const Text('Bellek Analizi'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'refresh':
+                  _load();
+                case 'settings':
+                  Navigator.of(context).pushNamed('/settings');
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'refresh', child: Text('Yenile')),
+              PopupMenuItem(value: 'settings', child: Text('Ayarlar')),
+            ],
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
@@ -106,7 +149,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Ana bellek', style: theme.textTheme.headlineSmall),
+                Text('Ana bellek', style: theme.textTheme.titleLarge),
                 Text(
                   'Boş ${Formats.size(free)}',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -134,23 +177,12 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             ),
             const SizedBox(height: 16),
             _breakdownGrid(theme),
-            const SizedBox(height: 16),
-            // Görsel depolama haritası (treemap): kategori alanları
-            // kare oranına en yakın dikdörtgenlerle çizilir.
-            if (_breakdownEntries().isNotEmpty) ...[
-              Text('Görsel harita', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              TreemapView(
-                items: _breakdownEntries(),
-                height: 200,
-              ),
-            ],
             const Divider(height: 24),
             _moreButton(context, 'DAHA FAZLA', () {
               Navigator.of(context).push(
                 MaterialPageRoute(
                     builder: (_) => const LargeFilesScreen(
-                        title: 'Depolama dağılımı')),
+                        title: 'Depolama dağılımı', showBreakdown: true)),
               );
             }),
           ],
@@ -159,29 +191,9 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
     );
   }
 
-  /// Kategori dağılımı → treemap öğeleri (boyut > 0).
-  List<TreemapItem> _breakdownEntries() {
-    const colors = <String, Color>{
-      'Resimler': Color(0xFF8E24AA),
-      'Videolar': Color(0xFFD32F2F),
-      'Ses': Color(0xFF00897B),
-      'Belgeler': Color(0xFF1976D2),
-      'Arşivler': Color(0xFF6D4C41),
-      'Diğerleri': Color(0xFF757575),
-    };
-    return [
-      for (final e in _breakdown.entries)
-        if (e.value > 0)
-          TreemapItem(
-            label: e.key,
-            size: e.value,
-            color: colors[e.key] ?? const Color(0xFF9E9E9E),
-          ),
-    ];
-  }
-
   /// Kategori dağılımı: ikon + ad + boyut (2 sütun).
-  Widget _breakdownGrid(ThemeData theme) {    const icons = <String, (IconData, Color)>{
+  Widget _breakdownGrid(ThemeData theme) {
+    const icons = <String, (IconData, Color)>{
       'Resimler': (Icons.image_rounded, Color(0xFF8E24AA)),
       'Videolar': (Icons.video_library_rounded, Color(0xFFD32F2F)),
       'Ses': (Icons.music_note_rounded, Color(0xFF00897B)),
@@ -189,7 +201,14 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
       'Arşivler': (Icons.folder_zip_rounded, Color(0xFF6D4C41)),
       'Diğerleri': (Icons.more_horiz_rounded, Color(0xFF757575)),
     };
-    final entries = _breakdown.entries.toList();
+    // Referans ekrandaki sıra: Görüntüler|Ses, Videolar|Belgeler,
+    // Arşivler|Diğerleri (bilinmeyen anahtarlar sona eklenir).
+    final entries = [
+      for (final k in _kBreakdownOrder)
+        if (_breakdown.containsKey(k)) MapEntry(k, _breakdown[k]!),
+      for (final e in _breakdown.entries)
+        if (!_kBreakdownOrder.contains(e.key)) e,
+    ];
     return Column(
       children: [
         for (var i = 0; i < entries.length; i += 2)
@@ -208,7 +227,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
                           Icon(icon, color: color, size: 20),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(e.key,
+                            child: Text(_label(e.key),
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.bodyMedium),
                           ),
@@ -240,7 +259,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Uygulamalar', style: theme.textTheme.headlineSmall),
+                Text('Uygulamalar', style: theme.textTheme.titleLarge),
                 Text(
                   Formats.size(_appsTotalSize),
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -283,7 +302,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Büyük dosyalar', style: theme.textTheme.headlineSmall),
+                Text('Büyük dosyalar', style: theme.textTheme.titleLarge),
                 Text(
                   Formats.size(_largeTotal),
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -334,7 +353,7 @@ class _StorageAnalysisScreenState extends State<StorageAnalysisScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Ön bellek dosyaları',
-                    style: theme.textTheme.headlineSmall),
+                    style: theme.textTheme.titleLarge),
                 Text(
                   Formats.size(_cache),
                   style: theme.textTheme.titleMedium?.copyWith(
